@@ -24,13 +24,13 @@ use update_checker::UpdateChecker;
 const PROCESS_ID: &str = "3A5583B7F6A5CF24D2E7C8650277DBB4";
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let instance = Box::new(single_instance::SingleInstance::new(PROCESS_ID).unwrap());
+    let instance = single_instance::SingleInstance::new(PROCESS_ID)?;
     if !instance.is_single() {
         let _ = std::process::Command::new("mshta")
             .raw_arg("\"javascript:var sh=new ActiveXObject('WScript.Shell'); sh.Popup('检测到程序已在运行',0,'错误',16);close()\"").spawn();
         eprintln!("❌ 程序已在运行！");
         std::process::exit(1);
-    };
+    }
 
     println!(
         r#"
@@ -44,7 +44,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         env!("CARGO_PKG_VERSION")
     );
 
-    let paths = path_get::get_path();
+    let paths = match path_get::get_path() {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("获取路径失败: {}", e);
+            std::process::exit(1);
+        }
+    };
     let config = read_config(&paths.config);
 
     println!("小狼毫路径: {:?}", paths.weasel);
@@ -106,10 +112,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             } else {
                                 println!("❌ 自动更新失败，请手动下载更新:");
                                 println!("  下载地址: {}", info.url);
-                                println!(
-                                    "  更新说明: {}",
-                                    info.description.lines().next().unwrap_or("")
-                                );
+                                println!("  更新说明: {}", info.description.lines().next().unwrap_or(""));
                             }
                         }
                         _ => {

@@ -8,4 +8,3 @@ rust-embed = { version = "8.7.2", features = ["compression"] }
 single-instance = "0.3.3"
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.141"
-sha2 = "0.10.8"
