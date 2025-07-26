@@ -1,10 +1,9 @@
-use crate::types::{UpdateConfig, UpdateInfo};
+use crate::types::{UpdateConfig, UpdateInfo, UserPath};
 use std::{collections::HashMap, fs, path::PathBuf};
 
 use super::{github_client::GitHubClient, file_operations::FileOperations, weasel_manager::WeaselManager};
 
 pub struct UpdateChecker {
-    pub curl_path: PathBuf,
     pub config: UpdateConfig,
     pub cache_dir: PathBuf,
     github_client: GitHubClient,
@@ -13,23 +12,27 @@ pub struct UpdateChecker {
 }
 
 impl UpdateChecker {
-    pub fn new(weasel_path: &PathBuf, config: UpdateConfig, user_path: &PathBuf) -> Self {
-        let curl_path = weasel_path.join("curl.exe");
-        let cache_dir = user_path.join("UpdateCache");
+    pub fn new(paths: &UserPath, config: UpdateConfig) -> Self {
+        let cache_dir = paths.user.join("UpdateCache");
 
-        if !curl_path.exists() {
-            panic!("未找到 curl.exe: {:?}", curl_path);
+        if !paths.curl.exists() {
+            panic!("未找到 curl.exe: {:?}\n请确保小狼毫已正确安装", paths.curl);
         }
 
-        fs::create_dir_all(&cache_dir).expect("无法创建缓存目录");
+        if !paths.zip.exists() {
+            panic!("未找到 7z.exe: {:?}\n请确保小狼毫已正确安装", paths.zip);
+        }
+
+        if let Err(e) = fs::create_dir_all(&cache_dir) {
+            panic!("无法创建缓存目录 {:?}: {}", cache_dir, e);
+        }
 
         Self {
-            curl_path: curl_path.clone(),
             config: config.clone(),
             cache_dir: cache_dir.clone(),
-            github_client: GitHubClient::new(curl_path.clone(), config.clone()),
-            file_ops: FileOperations::new(weasel_path.clone()),
-            weasel_mgr: WeaselManager::new(weasel_path.clone()),
+            github_client: GitHubClient::new(&paths.curl, config.clone()),
+            file_ops: FileOperations::new(&paths.zip),
+            weasel_mgr: WeaselManager::new(&paths.weasel),
         }
     }
 
@@ -100,7 +103,7 @@ impl UpdateChecker {
 
     // 委托给其他模块的方法
     pub fn download_file(&self, url: &str, save_path: &PathBuf) -> bool {
-        self.file_ops.download_file(&self.curl_path, url, save_path)
+        self.file_ops.download_file(&self.github_client.curl_path, url, save_path)
     }
 
     pub fn verify_sha256(&self, file_path: &PathBuf, expected_hash: &str) -> bool {
@@ -111,7 +114,7 @@ impl UpdateChecker {
         self.file_ops.extract_zip(zip_path, extract_path)
     }
 
-    pub fn deploy_weasel(&self, weasel_path: &PathBuf) -> bool {
-        self.weasel_mgr.deploy(weasel_path)
+    pub fn deploy_weasel(&self) -> bool {
+        self.weasel_mgr.deploy()
     }
 }

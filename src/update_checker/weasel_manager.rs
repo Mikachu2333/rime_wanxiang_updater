@@ -1,35 +1,49 @@
 use std::{path::PathBuf, process::Command, thread, time::Duration};
 
 pub struct WeaselManager {
-    weasel_path: PathBuf,
+    weasel_root: PathBuf,
 }
 
 impl WeaselManager {
-    pub fn new(weasel_path: PathBuf) -> Self {
-        Self { weasel_path }
+    pub fn new(weasel_path: &PathBuf) -> Self {
+        Self {
+            weasel_root: weasel_path.clone(),
+        }
     }
 
     /// 部署小狼毫
-    pub fn deploy(&self, weasel_path: &PathBuf) -> bool {
+    pub fn deploy(&self) -> bool {
         println!("正在部署小狼毫...");
 
-        let weasel_deployer = weasel_path.join("WeaselDeployer.exe");
-        if !weasel_deployer.exists() {
-            eprintln!("❌ 未找到 WeaselDeployer.exe: {:?}", weasel_deployer);
+        let deployer_path = self.weasel_root.join("WeaselDeployer.exe");
+        if !deployer_path.exists() {
+            eprintln!("❌ 未找到WeaselDeployer.exe: {:?}", deployer_path);
             return false;
         }
 
-        let output = Command::new(&weasel_deployer)
+        // 首先停止服务
+        self.stop_weasel_service();
+
+        // 等待一段时间确保服务完全停止
+        thread::sleep(Duration::from_secs(2));
+
+        // 执行部署
+        let output = Command::new(&deployer_path)
             .arg("/deploy")
-            .output();
+            .status();
 
         match output {
-            Ok(result) => {
-                if result.status.success() {
-                    println!("✅ 小狼毫部署完成");
+            Ok(status) => {
+                if status.success() {
+                    println!("✅ 小狼毫部署成功");
+
+                    // 等待部署完成后重启服务
+                    thread::sleep(Duration::from_secs(1));
+                    self.start_weasel_service();
+
                     true
                 } else {
-                    eprintln!("❌ 小狼毫部署失败: {}", String::from_utf8_lossy(&result.stderr));
+                    eprintln!("❌ 小狼毫部署失败，状态码: {}", status);
                     false
                 }
             }
@@ -40,32 +54,63 @@ impl WeaselManager {
         }
     }
 
+    /// 停止小狼毫服务
+    fn stop_weasel_service(&self) {
+        println!("正在停止小狼毫服务...");
+
+        let server_path = self.weasel_root.join("WeaselServer.exe");
+        if server_path.exists() {
+            let _ = Command::new(&server_path)
+                .arg("/q")
+                .status();
+        }
+
+        // 使用taskkill强制结束进程
+        let _ = Command::new("taskkill")
+            .args(&["/f", "/im", "WeaselServer.exe"])
+            .output();
+
+        let _ = Command::new("taskkill")
+            .args(&["/f", "/im", "WeaselDeployer.exe"])
+            .output();
+    }
+
+    /// 启动小狼毫服务
+    fn start_weasel_service(&self) {
+        println!("正在启动小狼毫服务...");
+
+        let server_path = self.weasel_root.join("WeaselServer.exe");
+        if server_path.exists() {
+            let _ = Command::new(&server_path)
+                .spawn();
+        }
+    }
+
     /// 重启小狼毫服务
     pub fn restart_service(&self) -> bool {
         println!("正在重启小狼毫服务...");
 
-        let weasel_server = self.weasel_path.join("WeaselServer.exe");
-        if !weasel_server.exists() {
-            eprintln!("❌ 未找到 WeaselServer.exe: {:?}", weasel_server);
-            return false;
-        }
+        let weasel_server = self.weasel_root.join("WeaselServer.exe");
 
         // 先停止服务
         let _ = Command::new("taskkill")
-            .args(&["/F", "/IM", "WeaselServer.exe"])
-            .output();
+            .args(&["/f", "/im", "WeaselServer.exe"])
+            .status();
 
-        // 等待一下再启动
-        thread::sleep(Duration::from_millis(1000));
+        // 等待一下
+        thread::sleep(Duration::from_secs(2));
 
-        // 启动服务
-        match Command::new(&weasel_server).spawn() {
+        // 重新启动服务
+        let output = Command::new(&weasel_server)
+            .spawn();
+
+        match output {
             Ok(_) => {
-                println!("✅ 小狼毫服务重启完成");
+                println!("✅ 小狼毫服务重启成功");
                 true
             }
             Err(e) => {
-                eprintln!("❌ 启动小狼毫服务失败: {}", e);
+                eprintln!("❌ 重启小狼毫服务失败: {}", e);
                 false
             }
         }

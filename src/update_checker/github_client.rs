@@ -1,117 +1,203 @@
 use crate::types::{UpdateConfig, UpdateInfo};
-use std::{fs, path::PathBuf, process::Command};
+use std::{path::PathBuf, process::Command};
 
 pub struct GitHubClient {
-    curl_path: PathBuf,
+    pub curl_path: PathBuf,
     config: UpdateConfig,
 }
 
 impl GitHubClient {
-    pub fn new(curl_path: PathBuf, config: UpdateConfig) -> Self {
-        Self { curl_path, config }
-    }
-
-    /// 检查字典更新
-    pub fn check_dict_update(&self) -> Result<Option<UpdateInfo>, Box<dyn std::error::Error>> {
-        if !self.config.dict_enabled {
-            return Ok(None);
+    pub fn new(curl_path: &PathBuf, config: UpdateConfig) -> Self {
+        Self {
+            curl_path: curl_path.clone(),
+            config,
         }
-        
-        self.check_repo_update(&self.config.dict_repo, "dict")
     }
 
     /// 检查方案更新
     pub fn check_scheme_update(&self) -> Result<Option<UpdateInfo>, Box<dyn std::error::Error>> {
-        if !self.config.scheme_enabled {
-            return Ok(None);
+        let api_url = format!("https://api.github.com/repos/{}/releases/latest", self.config.scheme_repo);
+        if let Some(release_info) = self.fetch_release_info(&api_url)? {
+            // 查找方案相关的资产
+            if let Some(asset) = self.find_scheme_asset(&release_info.assets) {
+                return Ok(Some(UpdateInfo {
+                    tag: release_info.tag_name,
+                    file_name: asset.name.clone(),
+                    file_size: asset.size,
+                    url: asset.browser_download_url.clone(),
+                    sha256: None,
+                    update_time: release_info.published_at,
+                    description: release_info.body.unwrap_or_default(),
+                }));
+            }
         }
-        
-        self.check_repo_update(&self.config.scheme_repo, "scheme")
+        Ok(None)
+    }
+
+    /// 检查字典更新
+    pub fn check_dict_update(&self) -> Result<Option<UpdateInfo>, Box<dyn std::error::Error>> {
+        let api_url = format!("https://api.github.com/repos/{}/releases/latest", self.config.dict_repo);
+        if let Some(release_info) = self.fetch_release_info(&api_url)? {
+            // 查找字典相关的资产
+            if let Some(asset) = self.find_dict_asset(&release_info.assets) {
+                return Ok(Some(UpdateInfo {
+                    tag: release_info.tag_name,
+                    file_name: asset.name.clone(),
+                    file_size: asset.size,
+                    url: asset.browser_download_url.clone(),
+                    sha256: None,
+                    update_time: release_info.published_at,
+                    description: release_info.body.unwrap_or_default(),
+                }));
+            }
+        }
+        Ok(None)
     }
 
     /// 检查模型更新
     pub fn check_model_update(&self) -> Result<Option<UpdateInfo>, Box<dyn std::error::Error>> {
-        if !self.config.model_enabled {
-            return Ok(None);
+        let api_url = format!("https://api.github.com/repos/{}/releases/latest", self.config.model_repo);
+        if let Some(release_info) = self.fetch_release_info(&api_url)? {
+            // 查找模型相关的资产
+            if let Some(asset) = self.find_model_asset(&release_info.assets) {
+                return Ok(Some(UpdateInfo {
+                    tag: release_info.tag_name,
+                    file_name: asset.name.clone(),
+                    file_size: asset.size,
+                    url: asset.browser_download_url.clone(),
+                    sha256: None,
+                    update_time: release_info.published_at,
+                    description: release_info.body.unwrap_or_default(),
+                }));
+            }
         }
-        
-        self.check_repo_update(&self.config.model_repo, "model")
+        Ok(None)
     }
 
     /// 检查程序自身更新
     pub fn check_self_update(&self) -> Result<Option<UpdateInfo>, Box<dyn std::error::Error>> {
-        if !self.config.self_update_enabled {
-            return Ok(None);
+        let api_url = format!("https://api.github.com/repos/{}/releases/latest", self.config.self_repo);
+        if let Some(release_info) = self.fetch_release_info(&api_url)? {
+            // 查找程序相关的资产
+            if let Some(asset) = self.find_self_asset(&release_info.assets) {
+                // 检查版本是否比当前版本更新
+                let current_version = env!("CARGO_PKG_VERSION");
+                let remote_version = release_info.tag_name.trim_start_matches('v');
+                
+                // 简单的版本比较：如果版本字符串不同，则认为有更新
+                if remote_version != current_version {
+                    return Ok(Some(UpdateInfo {
+                        tag: release_info.tag_name,
+                        file_name: asset.name.clone(),
+                        file_size: asset.size,
+                        url: asset.browser_download_url.clone(),
+                        sha256: None,
+                        update_time: release_info.published_at,
+                        description: release_info.body.unwrap_or_default(),
+                    }));
+                }
+            }
         }
-        
-        self.check_repo_update(&self.config.self_repo, "self")
+        Ok(None)
     }
 
-    /// 通用的仓库更新检查方法
-    fn check_repo_update(&self, repo: &str, component_type: &str) -> Result<Option<UpdateInfo>, Box<dyn std::error::Error>> {
-        let api_url = format!("https://api.github.com/repos/{}/releases/latest", repo);
-        let temp_file = std::env::temp_dir().join(format!("{}_latest.json", component_type));
-        
-        // 使用curl获取最新发布信息
+    /// 获取GitHub Release信息
+    fn fetch_release_info(&self, api_url: &str) -> Result<Option<GitHubRelease>, Box<dyn std::error::Error>> {
         let output = Command::new(&self.curl_path)
             .args(&[
-                "-s", "-L", 
+                "-s",
                 "-H", "Accept: application/vnd.github.v3+json",
-                "-H", "User-Agent: RimeWanxiangUpdater/1.0",
-                "-o", temp_file.to_str().unwrap(),
-                &api_url
+                "-H", "User-Agent: rime_wanxiang_updater",
+                api_url
             ])
             .output()?;
 
-        if !output.status.success() {
-            return Err(format!("获取{}更新信息失败", component_type).into());
+        if output.status.success() {
+            let response = String::from_utf8(output.stdout)?;
+            
+            // 检查是否是 API 错误响应
+            if response.contains("\"message\"") && response.contains("\"documentation_url\"") {
+                // 这可能是 GitHub API 错误响应
+                if let Ok(error) = serde_json::from_str::<GitHubApiError>(&response) {
+                    eprintln!("GitHub API 错误: {}", error.message);
+                    return Ok(None);
+                }
+            }
+            
+            let release: GitHubRelease = serde_json::from_str(&response)?;
+            Ok(Some(release))
+        } else {
+            eprintln!("获取GitHub Release信息失败: {}", String::from_utf8_lossy(&output.stderr));
+            Ok(None)
         }
+    }
 
-        // 读取并解析JSON响应
-        let content = fs::read_to_string(&temp_file)?;
-        let release: serde_json::Value = serde_json::from_str(&content)?;
-        
-        // 清理临时文件
-        let _ = fs::remove_file(&temp_file);
-
-        // 解析发布信息
-        if let Some(assets) = release["assets"].as_array() {
-            // 根据组件类型选择合适的资产
-            let asset = match component_type {
-                "dict" => assets.iter().find(|a| {
-                    let name = a["name"].as_str().unwrap_or("");
-                    name.contains("dict") || name.ends_with(".zip")
-                }),
-                "scheme" => assets.iter().find(|a| {
-                    let name = a["name"].as_str().unwrap_or("");
-                    name.contains("scheme") || name.ends_with(".zip")
-                }),
-                "model" => assets.iter().find(|a| {
-                    let name = a["name"].as_str().unwrap_or("");
-                    name.contains("model") || name.ends_with(".dat")
-                }),
-                "self" => assets.iter().find(|a| {
-                    let name = a["name"].as_str().unwrap_or("");
-                    name.ends_with(".exe")
-                }),
-                _ => assets.first(),
-            };
-
-            if let Some(asset) = asset {
-                let update_info = UpdateInfo {
-                    tag: release["tag_name"].as_str().unwrap_or("").to_string(),
-                    url: asset["browser_download_url"].as_str().unwrap_or("").to_string(),
-                    file_name: asset["name"].as_str().unwrap_or("").to_string(),
-                    file_size: asset["size"].as_u64().unwrap_or(0),
-                    update_time: release["published_at"].as_str().unwrap_or("").to_string(),
-                    description: release["body"].as_str().unwrap_or("").to_string(),
-                    sha256: String::new(), // GitHub API不直接提供SHA256
-                };
-                
-                return Ok(Some(update_info));
+    /// 查找方案相关的资产文件
+    fn find_scheme_asset<'a>(&self, assets: &'a [GitHubAsset]) -> Option<&'a GitHubAsset> {
+        for asset in assets {
+            let name = asset.name.to_lowercase();
+            if name.contains("scheme") || name.contains("方案") {
+                return Some(asset);
             }
         }
-
-        Ok(None)
+        None
     }
+
+    /// 查找字典相关的资产文件
+    fn find_dict_asset<'a>(&self, assets: &'a [GitHubAsset]) -> Option<&'a GitHubAsset> {
+        for asset in assets {
+            let name = asset.name.to_lowercase();
+            if name.contains("dict") || name.contains("词库") || name.contains("dictionary") {
+                return Some(asset);
+            }
+        }
+        None
+    }
+
+    /// 查找模型相关的资产文件
+    fn find_model_asset<'a>(&self, assets: &'a [GitHubAsset]) -> Option<&'a GitHubAsset> {
+        for asset in assets {
+            let name = asset.name.to_lowercase();
+            if name.contains("model") || name.contains("模型") || name.contains(".gram") {
+                return Some(asset);
+            }
+        }
+        None
+    }
+
+    /// 查找程序相关的资产文件
+    fn find_self_asset<'a>(&self, assets: &'a [GitHubAsset]) -> Option<&'a GitHubAsset> {
+        for asset in assets {
+            let name = asset.name.to_lowercase();
+            if name.contains("updater") || name.ends_with(".exe") {
+                return Some(asset);
+            }
+        }
+        None
+    }
+}
+
+/// GitHub Release 响应结构
+#[derive(serde::Deserialize)]
+struct GitHubRelease {
+    tag_name: String,
+    published_at: String,
+    body: Option<String>,
+    assets: Vec<GitHubAsset>,
+}
+
+/// GitHub Asset 响应结构
+#[derive(serde::Deserialize)]
+struct GitHubAsset {
+    name: String,
+    size: u64,
+    browser_download_url: String,
+}
+
+/// GitHub API 错误响应结构
+#[derive(serde::Deserialize)]
+#[allow(dead_code)]
+struct GitHubApiError {
+    message: String,
+    documentation_url: Option<String>,
 }

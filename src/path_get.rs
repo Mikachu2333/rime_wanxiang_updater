@@ -1,85 +1,121 @@
-use crate::types::{UpdateConfig, Paths};
+use crate::types::UserPath;
 use rust_embed::Embed;
-use std::{env, fs, path::PathBuf, process::Command};
+use std::{path::PathBuf, process::Command};
 
 const CONF_FILENAME: &str = "updater_conf.ini";
 
-/// 获取所有必要的路径
-pub fn get_path() -> Paths {
-    let weasel_path = find_weasel_path();
-    let user_path = find_user_path(&weasel_path);
-    let config_path = user_path.join("updater_config.json");
-
-    Paths {
+pub fn get_path() -> UserPath {
+    let (user_path, config_path) = get_user_path();
+    let (weasel_path, curl_path, zip_path) = get_exe_path();
+    let temp = UserPath {
+        zip: zip_path,
+        curl: curl_path,
         weasel: weasel_path,
         user: user_path,
         config: config_path,
+    };
+    dbg!(&temp);
+    temp
+}
+
+fn get_user_path() -> (PathBuf, PathBuf) {
+    let output = Command::new("powershell")
+        .args([
+            "-Command",
+            "Get-ItemProperty",
+            "-Path",
+            "'Registry::HKEY_CURRENT_USER\\Software\\Rime\\Weasel'",
+        ])
+        .output()
+        .expect("未安装 PowerShell 或调用失败");
+
+    if output.status.success() {
+        let user = parse_user_path(
+            String::from_utf8(output.stdout).expect("Failed to convert output to string"),
+        );
+        let config = format!("{}/{}", user, CONF_FILENAME);
+        let packed_config = PathBuf::from(config);
+        config_exist(&packed_config);
+
+        (PathBuf::from(user), packed_config)
+    } else {
+        panic!(
+            "Failed to get Rime user directory: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
 }
 
-/// 查找小狼毫安装路径
-fn find_weasel_path() -> PathBuf {
-    // 优先级顺序查找
-    let possible_paths = vec![
-        // 环境变量
-        env::var("WEASEL_ROOT").ok().map(PathBuf::from),
-        // 程序文件目录
-        Some(PathBuf::from(r"C:\Program Files (x86)\Rime\weasel")),
-        Some(PathBuf::from(r"C:\Program Files\Rime\weasel")),
-        // 当前目录（便携版）
-        Some(env::current_dir().unwrap_or_default()),
-    ];
+fn get_exe_path() -> (PathBuf, PathBuf, PathBuf) {
+    let output = Command::new("powershell")
+        .args([
+            "-Command",
+            "Get-ItemProperty",
+            "-Path",
+            "'Registry::HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Rime\\Weasel'",
+        ])
+        .output()
+        .expect("未安装 PowerShell 或调用失败");
 
-    for path in possible_paths.into_iter().flatten() {
-        if path.join("WeaselDeployer.exe").exists() && path.join("curl.exe").exists() {
-            return path;
-        }
+    if output.status.success() {
+        let exe = parse_exe_path(
+            String::from_utf8(output.stdout).expect("Failed to convert output to string"),
+        );
+        let curl = format!("{}/curl.exe", &exe);
+        let zip = format!("{}/7z.exe", &exe);
+        (PathBuf::from(exe), PathBuf::from(curl), PathBuf::from(zip))
+    } else {
+        panic!(
+            "Failed to get Weasel directory: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
-
-    // 如果都找不到，返回默认路径并提示用户
-    eprintln!("警告: 未找到小狼毫安装目录，请确保:");
-    eprintln!("1. 小狼毫已正确安装");
-    eprintln!("2. 或设置 WEASEL_ROOT 环境变量");
-    eprintln!("3. 或将程序放在小狼毫目录中");
-
-    PathBuf::from(r"C:\Program Files (x86)\Rime\weasel")
 }
 
-/// 查找用户数据目录
-fn find_user_path(weasel_path: &PathBuf) -> PathBuf {
-    // 优先级顺序查找
-    let possible_paths = vec![
-        // 环境变量
-        env::var("RIME_USER_DIR").ok().map(PathBuf::from),
-        // AppData目录
-        env::var("APPDATA").ok().map(|p| PathBuf::from(p).join("Rime")),
-        // 小狼毫目录下的User子目录（便携版）
-        Some(weasel_path.join("User")),
-        // 默认用户目录
-        env::var("USERPROFILE").ok().map(|p| PathBuf::from(p).join("AppData").join("Roaming").join("Rime")),
-    ];
-
-    for path in possible_paths.into_iter().flatten() {
-        if path.exists() || path.parent().map_or(false, |p| p.exists()) {
-            // 确保目录存在
-            if let Err(e) = fs::create_dir_all(&path) {
-                eprintln!("创建用户目录失败: {}", e);
-                continue;
-            }
-            return path;
+fn parse_user_path(output: String) -> String {
+    let mut result = String::new();
+    for line in output.lines() {
+        if line.contains("RimeUserDir") {
+            let user_path_str = line
+                .split_once(':')
+                .map(|(_, v)| {
+                    let binding = v
+                        .trim()
+                        .replace("\\\\", "/")
+                        .replace("\\", "/")
+                        .replace("//", "/");
+                    format!("{}", binding.trim_end_matches('/'))
+                })
+                .unwrap();
+            dbg!(&user_path_str);
+            result = user_path_str.to_string();
+            break;
         }
     }
+    result
+}
 
-    // 如果都找不到，使用默认路径
-    let default_path = env::var("APPDATA")
-        .map(|p| PathBuf::from(p).join("Rime"))
-        .unwrap_or_else(|_| PathBuf::from("./User"));
-
-    if let Err(e) = fs::create_dir_all(&default_path) {
-        eprintln!("创建默认用户目录失败: {}", e);
+fn parse_exe_path(output: String) -> String {
+    let mut result = String::new();
+    for line in output.lines() {
+        if line.contains("WeaselRoot") {
+            let exe_path_str = line
+                .split_once(':')
+                .map(|(_, v)| {
+                    let binding = v
+                        .trim()
+                        .replace("\\\\", "/")
+                        .replace("\\", "/")
+                        .replace("//", "/");
+                    format!("{}", binding.trim_end_matches('/'))
+                })
+                .unwrap();
+            dbg!(&exe_path_str);
+            result = exe_path_str.to_string();
+            break;
+        }
     }
-
-    default_path
+    result
 }
 
 fn config_exist(config_path: &PathBuf) {
@@ -88,8 +124,8 @@ fn config_exist(config_path: &PathBuf) {
         #[derive(Embed)]
         #[folder = "res/"]
         struct Asset;
-        let ini_res = Asset::get(&CONF_FILENAME).expect("Error read embedded INI res file.");
-        let _ = std::fs::write(&config_path, ini_res.data.as_ref()).expect("Error write INI file.");
+        let ini_res = Asset::get(CONF_FILENAME).expect("Error reading embedded INI resource file");
+        let _ = std::fs::write(config_path, ini_res.data.as_ref()).expect("Error writing INI file");
     }
 }
 

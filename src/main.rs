@@ -1,3 +1,12 @@
+/// 万象词库更新器主程序
+/// 
+/// 功能：
+/// - 检查并更新万象输入法方案
+/// - 检查并更新词库文件  
+/// - 检查并更新模型文件
+/// - 支持程序自身更新
+/// - 支持单实例运行
+/// - 支持自动重新部署小狼毫
 use std::{fs, os::windows::process::CommandExt, path::PathBuf};
 
 mod config_read;
@@ -19,7 +28,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if !instance.is_single() {
         let _ = std::process::Command::new("mshta")
             .raw_arg("\"javascript:var sh=new ActiveXObject('WScript.Shell'); sh.Popup('检测到程序已在运行',0,'错误',16);close()\"").spawn();
-        panic!("程序已在运行!")
+        eprintln!("❌ 程序已在运行！");
+        std::process::exit(1);
     };
 
     println!(
@@ -40,9 +50,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("小狼毫路径: {:?}", paths.weasel);
     println!("用户目录: {:?}", paths.user);
     println!("配置文件: {:?}", paths.config);
+    println!("cURL路径: {:?}", paths.curl);
+    println!("7z路径: {:?}", paths.zip);
 
     // 创建更新检查器
-    let checker = UpdateChecker::new(&paths.weasel, config, &paths.user);
+    let checker = UpdateChecker::new(&paths, config);
 
     // 检查所有更新
     println!("\n正在检查更新...");
@@ -100,7 +112,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 );
                             }
                         }
-                        _ => {}
+                        _ => {
+                            eprintln!("⚠️ 未知的组件类型: {}", component);
+                        }
                     }
                 }
 
@@ -115,13 +129,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             if has_updates {
                 println!("\n正在重新部署...");
-                if checker.deploy_weasel(&paths.weasel) {
+                if checker.deploy_weasel() {
                     println!("✅ 更新完成!");
                 } else {
                     println!("❌ 部署失败，请手动重新部署");
                 }
-            } else if !updates.is_empty() {
-                println!("\n所有更新已完成，但无需重新部署。");
             }
         }
         Err(e) => {
@@ -155,27 +167,26 @@ fn perform_update(
 
     // 下载文件
     if !checker.download_file(&update.url, &download_path) {
+        eprintln!("❌ {} 下载失败", update_type);
         return false;
     }
 
     // 验证哈希 (如果有哈希值的话)
-    if !update.sha256.is_empty() && !checker.verify_sha256(&download_path, &update.sha256) {
-        return false;
+    if let Some(ref expected_hash) = update.sha256 {
+        if !checker.verify_sha256(&download_path, expected_hash) {
+            eprintln!("❌ {} 文件完整性验证失败", update_type);
+            return false;
+        }
     }
 
     // 解压文件
-    if let Err(e) = fs::create_dir_all(extract_path) {
-        eprintln!("无法创建解压目录: {}", e);
+    if !checker.extract_zip(&download_path, extract_path) {
+        eprintln!("❌ {} 解压失败", update_type);
         return false;
     }
 
-    if checker.extract_zip(&download_path, extract_path) {
-        println!("✅ {} 更新成功", update_type);
-        true
-    } else {
-        println!("❌ {} 更新失败", update_type);
-        false
-    }
+    println!("✅ {} 更新成功", update_type);
+    true
 }
 
 fn download_and_replace(
@@ -187,116 +198,69 @@ fn download_and_replace(
 
     // 下载文件
     if !checker.download_file(&update.url, &download_path) {
+        eprintln!("❌ 模型文件下载失败");
         return false;
     }
 
-    // 验证哈希 (如果有哈希值的话)
-    if !update.sha256.is_empty() && !checker.verify_sha256(&download_path, &update.sha256) {
-        return false;
-    }
-
-    // 替换文件
-    if let Some(parent) = target_path.parent() {
-        if let Err(e) = fs::create_dir_all(parent) {
-            eprintln!("无法创建目标目录: {}", e);
+    // 验证哈希
+    if let Some(ref expected_hash) = update.sha256 {
+        if !checker.verify_sha256(&download_path, expected_hash) {
+            eprintln!("❌ 模型文件完整性验证失败");
             return false;
         }
     }
 
-    if fs::copy(&download_path, target_path).is_ok() {
-        println!("✅ 模型文件更新成功");
-        true
-    } else {
-        println!("❌ 模型文件更新失败");
-        false
-    }
-}
-
-fn perform_self_update(checker: &UpdateChecker, update: &UpdateInfo) -> bool {
-    let current_exe = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("updater.exe"));
-    let exe_name = current_exe.file_name().unwrap().to_string_lossy();
-    let default_dir = PathBuf::from(".");
-    let exe_dir = current_exe.parent().unwrap_or(&default_dir);
-
-    // 创建批处理脚本来处理更新
-    let curl_path = checker.curl_path.to_string_lossy();
-    let update_script = format!(
-        r#"@echo off
-chcp 65001 >nul
-echo 正在下载更新...
-"{curl_path}" -L -o "temp_{exe_name}" "{download_url}"
-if %errorlevel% neq 0 (
-    echo 下载失败！
-    pause
-    exit /b 1
-)
-
-echo 等待程序退出...
-timeout /t 3 /nobreak > nul
-
-echo 正在备份当前版本...
-if exist "{exe_name}" (
-    copy "{exe_name}" "{exe_name}.backup" >nul
-    if %errorlevel% neq 0 (
-        echo 备份失败！
-        pause
-        exit /b 1
-    )
-)
-
-echo 正在更新程序...
-move "temp_{exe_name}" "{exe_name}"
-if %errorlevel% neq 0 (
-    echo 更新失败！正在恢复备份...
-    if exist "{exe_name}.backup" (
-        move "{exe_name}.backup" "{exe_name}"
-    )
-    pause
-    exit /b 1
-)
-
-echo 清理备份文件...
-if exist "{exe_name}.backup" del "{exe_name}.backup"
-
-echo 重新启动程序...
-start "" "{exe_name}"
-
-echo 更新完成！
-timeout /t 2 /nobreak > nul
-del "%~f0"
-"#,
-        curl_path = curl_path,
-        exe_name = exe_name,
-        download_url = update.url
-    );
-
-    let script_path = exe_dir.join("update_self.bat");
-
-    // 写入批处理脚本
-    if let Err(e) = fs::write(&script_path, update_script) {
-        eprintln!("创建更新脚本失败: {}", e);
+    // 替换文件
+    if let Err(e) = fs::copy(&download_path, target_path) {
+        eprintln!("❌ 替换模型文件失败: {}", e);
         return false;
     }
 
-    println!("正在启动自动更新...");
+    println!("✅ 模型更新成功");
+    true
+}
 
-    // 启动批处理脚本
-    let result = std::process::Command::new("cmd")
-        .args(&["/C", "start", "", script_path.to_str().unwrap()])
-        .creation_flags(0x08000000) // CREATE_NO_WINDOW
-        .spawn();
+fn perform_self_update(checker: &UpdateChecker, update: &UpdateInfo) -> bool {
+    let download_path = checker.cache_dir.join(&update.file_name);
 
-    match result {
-        Ok(_) => {
-            println!("更新脚本已启动，程序即将退出...");
-            std::thread::sleep(std::time::Duration::from_millis(1000));
-            true
-        }
-        Err(e) => {
-            eprintln!("启动更新脚本失败: {}", e);
-            // 清理脚本文件
-            let _ = fs::remove_file(&script_path);
-            false
+    // 下载新版本
+    if !checker.download_file(&update.url, &download_path) {
+        eprintln!("❌ 程序更新文件下载失败");
+        return false;
+    }
+
+    // 验证哈希
+    if let Some(ref expected_hash) = update.sha256 {
+        if !checker.verify_sha256(&download_path, expected_hash) {
+            eprintln!("❌ 程序更新文件完整性验证失败");
+            return false;
         }
     }
+
+    // 创建自更新脚本
+    let script_content = format!(
+        r#"@echo off
+timeout /t 3 /nobreak >nul
+copy /y "{}" "{}"
+if %errorlevel% equ 0 (
+    echo 更新成功，正在重新启动程序...
+    start "" "{}"
+) else (
+    echo 更新失败！
+    pause
+)
+del "%~f0""#,
+        download_path.display(),
+        std::env::current_exe().unwrap().display(),
+        std::env::current_exe().unwrap().display()
+    );
+
+    let script_path = checker.cache_dir.join("update.bat");
+    if fs::write(&script_path, script_content).is_ok() {
+        // 启动更新脚本
+        let _ = std::process::Command::new(&script_path).spawn();
+        return true;
+    }
+
+    false
 }

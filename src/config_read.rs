@@ -23,7 +23,7 @@ pub fn read_config(config_path: &PathBuf) -> UpdateConfig {
             }
         }
     } else {
-        println!("ℹ️ 配置文件不存在，创建默认配置");
+        println!("ℹ️ 配置文件不存在，将创建默认配置");
     }
 
     // 使用默认配置并保存
