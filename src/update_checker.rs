@@ -1,6 +1,11 @@
 use crate::github_api::{GitHubApiError, GitHubRelease};
 use crate::types::{UpdateConfig, UpdateInfo};
-use crate::url_utils::{apply_mirror_to_download_url, build_releases_api_url};
+use crate::url_utils::{
+    apply_mirror_to_download_url, 
+    build_releases_api_url, 
+    build_releases_tag_api_url,
+    sanitize_mirror_domain
+};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::{fs, path::PathBuf, process::Command};
@@ -22,18 +27,26 @@ impl UpdateChecker {
 
         fs::create_dir_all(&cache_dir).expect("无法创建缓存目录");
 
+        // 使用 sanitize_mirror_domain 清理镜像配置
+        let sanitized_config = UpdateConfig {
+            mirror: sanitize_mirror_domain(&config.mirror),
+            ..config
+        };
+
         Self {
             curl_path,
-            config,
+            config: sanitized_config,
             cache_dir,
         }
     }
 
     /// 检查字典更新
     pub fn check_dict_update(&self) -> Option<UpdateInfo> {
-        let url = format!(
-            "https://api.github.com/repos/{}/{}/releases/tags/{}",
-            self.config.owner, self.config.repo, self.config.dict_releases_tag
+        // 使用 build_releases_tag_api_url 构建API URL
+        let url = build_releases_tag_api_url(
+            &self.config.owner, 
+            &self.config.repo, 
+            &self.config.dict_releases_tag
         );
 
         let response_json = self.fetch_json(&url)?;
@@ -43,14 +56,101 @@ impl UpdateChecker {
 
     /// 检查模型更新
     pub fn check_model_update(&self) -> Option<UpdateInfo> {
-        let url = format!(
-            "https://api.github.com/repos/{}/{}/releases/tags/{}",
-            self.config.owner, self.config.repo, self.config.model_tag
+        // 使用 build_releases_tag_api_url 构建API URL
+        let url = build_releases_tag_api_url(
+            &self.config.owner, 
+            &self.config.repo, 
+            &self.config.model_tag
         );
 
         let response_json = self.fetch_json(&url)?;
         let release: Value = serde_json::from_str(&response_json).ok()?;
         self.parse_release_info(release, "model")
+    }
+
+    /// 检查程序自身更新
+    pub fn check_self_update(&self) -> Option<UpdateInfo> {
+        let url = "https://api.github.com/repos/Mikachu2333/rime_wanxiang_updater/releases/latest";
+
+        let response_json = self.fetch_json(&url)?;
+        let release: Value = serde_json::from_str(&response_json).ok()?;
+
+        // 检查是否为稳定版本（不含预发布标记）
+        if release["prerelease"].as_bool().unwrap_or(true) {
+            return None;
+        }
+
+        let tag_name = release["tag_name"].as_str().unwrap_or("").to_string();
+        let published_at = release["published_at"].as_str().unwrap_or("");
+        let description = release["body"].as_str().unwrap_or("").to_string();
+
+        // 比较版本号
+        let current_version = env!("CARGO_PKG_VERSION");
+        if !self.is_newer_version(&tag_name, current_version) {
+            return None;
+        }
+
+        // 查找 Windows 可执行文件
+        if let Some(assets) = release["assets"].as_array() {
+            for asset in assets {
+                let file_name = asset["name"].as_str().unwrap_or("");
+
+                // 寻找 Windows 可执行文件
+                if file_name.ends_with(".exe") || file_name.contains("windows") {
+                    let download_url = if self.config.mirror.is_empty() {
+                        asset["browser_download_url"]
+                            .as_str()
+                            .unwrap_or("")
+                            .to_string()
+                    } else {
+                        format!(
+                            "https://{}/{}",
+                            self.config.mirror,
+                            asset["browser_download_url"].as_str().unwrap_or("")
+                        )
+                    };
+
+                    return Some(UpdateInfo {
+                        url: download_url,
+                        update_time: published_at.to_string(),
+                        tag: tag_name,
+                        sha256: String::new(),
+                        description,
+                        file_size: asset["size"].as_u64().unwrap_or(0),
+                        file_name: file_name.to_string(),
+                    });
+                }
+            }
+        }
+
+        None
+    }
+
+    /// 比较版本号是否更新
+    fn is_newer_version(&self, remote_version: &str, current_version: &str) -> bool {
+        // 移除版本号前的 'v' 前缀
+        let remote_version = remote_version.trim_start_matches('v');
+        let current_version = current_version.trim_start_matches('v');
+
+        // 简单的版本比较（假设格式为 x.y.z）
+        let remote_parts: Vec<u32> = remote_version
+            .split('.')
+            .filter_map(|s| s.parse().ok())
+            .collect();
+        let current_parts: Vec<u32> = current_version
+            .split('.')
+            .filter_map(|s| s.parse().ok())
+            .collect();
+
+        // 补齐版本号位数
+        let max_len = remote_parts.len().max(current_parts.len());
+        let mut remote_normalized = remote_parts;
+        let mut current_normalized = current_parts;
+
+        remote_normalized.resize(max_len, 0);
+        current_normalized.resize(max_len, 0);
+
+        remote_normalized > current_normalized
     }
 
     /// 检查方案更新（同步方法，使用curl）
@@ -67,57 +167,6 @@ impl UpdateChecker {
         };
 
         self.find_asset_in_releases(&releases, scheme_file)
-    }
-
-    /// 解析发布信息（统一的同步方法）
-    fn parse_release_info(&self, release: Value, update_type: &str) -> Option<UpdateInfo> {
-        let tag_name = release["tag_name"].as_str().unwrap_or("").to_string();
-        let published_at = release["published_at"].as_str().unwrap_or("");
-        let description = release["body"].as_str().unwrap_or("").to_string();
-
-        // 直接使用发布时间字符串，无需额外格式化
-        let update_time = published_at.to_string();
-
-        // 查找对应的文件
-        if let Some(assets) = release["assets"].as_array() {
-            for asset in assets {
-                let file_name = asset["name"].as_str().unwrap_or("");
-
-                let matches = if update_type == "model" {
-                    file_name == self.config.model_file_name
-                } else {
-                    // 对于字典，寻找包含 dict 或 .zip 的文件
-                    file_name.contains("dict") || file_name.ends_with(".zip")
-                };
-
-                if matches {
-                    let download_url = if self.config.mirror.is_empty() {
-                        asset["browser_download_url"]
-                            .as_str()
-                            .unwrap_or("")
-                            .to_string()
-                    } else {
-                        format!(
-                            "https://{}/{}",
-                            self.config.mirror,
-                            asset["browser_download_url"].as_str().unwrap_or("")
-                        )
-                    };
-
-                    return Some(UpdateInfo {
-                        url: download_url,
-                        update_time,
-                        tag: tag_name,
-                        sha256: String::new(),
-                        description,
-                        file_size: asset["size"].as_u64().unwrap_or(0),
-                        file_name: file_name.to_string(),
-                    });
-                }
-            }
-        }
-
-        None
     }
 
     /// 从curl获取JSON数据（用于方案检查）
@@ -272,6 +321,23 @@ impl UpdateChecker {
             println!("未找到模型更新信息");
         }
 
+        // 检查程序自身更新
+        println!("检查程序更新...");
+        if let Some(self_info) = self.check_self_update() {
+            let cache_path = self.cache_dir.join("self_info.json");
+            if self.should_update(&self_info, &cache_path) {
+                println!(
+                    "发现程序更新: {} ({})",
+                    self_info.tag, self_info.update_time
+                );
+                updates.insert("self".to_string(), self_info);
+            } else {
+                println!("程序已是最新版本");
+            }
+        } else {
+            println!("程序已是最新版本");
+        }
+
         // 同步检查方案更新（如果需要的话）
         println!("检查方案更新...");
         if let Some(scheme_info) = self.check_scheme_update(&self.config.model_file_name) {
@@ -341,8 +407,10 @@ impl UpdateChecker {
         let output = Command::new("powershell")
             .args([
                 "-Command",
-                &format!("Get-FileHash -Path '{}' -Algorithm SHA256 | Select-Object -ExpandProperty Hash", 
-                        file_path.display())
+                &format!(
+                    "Get-FileHash -Path '{}' -Algorithm SHA256 | Select-Object -ExpandProperty Hash",
+                    file_path.display()
+                ),
             ])
             .output()
             .expect("PowerShell 哈希计算失败");
@@ -442,5 +510,54 @@ impl UpdateChecker {
             eprintln!("❌ 未找到部署器");
             false
         }
+    }
+
+    /// 解析发布信息（统一的同步方法）
+    fn parse_release_info(&self, release: Value, update_type: &str) -> Option<UpdateInfo> {
+        let tag_name = release["tag_name"].as_str().unwrap_or("").to_string();
+        let published_at = release["published_at"].as_str().unwrap_or("");
+        let description = release["body"].as_str().unwrap_or("").to_string();
+
+        let update_time = published_at.to_string();
+
+        if let Some(assets) = release["assets"].as_array() {
+            for asset in assets {
+                let file_name = asset["name"].as_str().unwrap_or("");
+
+                let matches = if update_type == "model" {
+                    file_name == self.config.model_file_name
+                } else if update_type == "dict" {
+                    file_name.contains("dict") || file_name.ends_with(".zip")
+                } else {
+                    false
+                };
+
+                if matches {
+                    let original_url = asset["browser_download_url"]
+                        .as_str()
+                        .unwrap_or("")
+                        .to_string();
+
+                    // 使用 apply_mirror_to_download_url 应用镜像
+                    let download_url = if self.config.mirror.is_empty() {
+                        original_url
+                    } else {
+                        apply_mirror_to_download_url(&self.config.mirror, &original_url)
+                    };
+
+                    return Some(UpdateInfo {
+                        url: download_url,
+                        update_time,
+                        tag: tag_name,
+                        sha256: String::new(),
+                        description,
+                        file_size: asset["size"].as_u64().unwrap_or(0),
+                        file_name: file_name.to_string(),
+                    });
+                }
+            }
+        }
+
+        None
     }
 }

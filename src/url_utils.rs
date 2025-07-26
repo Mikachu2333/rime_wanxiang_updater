@@ -74,17 +74,9 @@ pub fn parse_github_repo(repo_url: &str) -> Option<(String, String)> {
     None
 }
 
-/// 构建GitHub API URL
-pub fn build_github_api_url(owner: &str, repo: &str, endpoint: &str) -> String {
-    format!(
-        "https://api.github.com/repos/{}/{}/{}",
-        owner, repo, endpoint
-    )
-}
-
 /// 构建GitHub Releases API URL
 pub fn build_releases_api_url(owner: &str, repo: &str) -> String {
-    build_github_api_url(owner, repo, "releases")
+    format!("https://api.github.com/repos/{}/{}/releases", owner, repo)
 }
 
 /// 构建GitHub Releases Tag API URL
@@ -97,11 +89,11 @@ pub fn build_releases_tag_api_url(owner: &str, repo: &str, tag: &str) -> String 
 }
 
 /// 应用镜像前缀到下载URL
-pub fn apply_mirror_to_download_url(mirror: &str, original_url: &str) -> String {
-    if mirror == "github.com" || mirror.is_empty() {
-        original_url.to_string()
+pub fn apply_mirror_to_download_url(mirror: &str, url: &str) -> String {
+    if mirror.is_empty() {
+        url.to_string()
     } else {
-        format!("https://{}/{}", mirror, original_url)
+        format!("https://{}/{}", mirror, url)
     }
 }
 
