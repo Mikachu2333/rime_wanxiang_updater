@@ -1,10 +1,8 @@
-use crate::github_api::{GitHubApiError, GitHubRelease};
+use crate::github_api::GitHubRelease;
 use crate::types::{UpdateConfig, UpdateInfo};
 use crate::url_utils::{
-    apply_mirror_to_download_url, 
-    build_releases_api_url, 
-    build_releases_tag_api_url,
-    sanitize_mirror_domain
+    apply_mirror_to_download_url, build_releases_api_url, build_releases_tag_api_url,
+    sanitize_mirror_domain,
 };
 use serde_json::Value;
 use std::collections::HashMap;
@@ -44,9 +42,9 @@ impl UpdateChecker {
     pub fn check_dict_update(&self) -> Option<UpdateInfo> {
         // 使用 build_releases_tag_api_url 构建API URL
         let url = build_releases_tag_api_url(
-            &self.config.owner, 
-            &self.config.repo, 
-            &self.config.dict_releases_tag
+            &self.config.owner,
+            &self.config.repo,
+            &self.config.dict_releases_tag,
         );
 
         let response_json = self.fetch_json(&url)?;
@@ -58,9 +56,9 @@ impl UpdateChecker {
     pub fn check_model_update(&self) -> Option<UpdateInfo> {
         // 使用 build_releases_tag_api_url 构建API URL
         let url = build_releases_tag_api_url(
-            &self.config.owner, 
-            &self.config.repo, 
-            &self.config.model_tag
+            &self.config.owner,
+            &self.config.repo,
+            &self.config.model_tag,
         );
 
         let response_json = self.fetch_json(&url)?;
@@ -169,34 +167,59 @@ impl UpdateChecker {
         self.find_asset_in_releases(&releases, scheme_file)
     }
 
-    /// 从curl获取JSON数据（用于方案检查）
+    /// 从curl获取JSON数据（支持cookies）
     fn fetch_json(&self, url: &str) -> Option<String> {
         println!("正在请求: {}", url);
 
-        let output = Command::new(&self.curl_path)
-            .args([
-                "-s",
-                "-H",
-                "User-Agent: RIME-Updater/1.0",
-                "-H",
-                "Accept: application/vnd.github.v3+json",
-                url,
-            ])
-            .output()
-            .expect("curl 执行失败");
+        let mut command = Command::new(&self.curl_path);
+
+        // 基本curl参数
+        command
+            .arg("-s") // 静默模式
+            .arg("-L") // 跟随重定向
+            .arg("--fail") // 失败时返回错误
+            .arg("--max-time")
+            .arg("30") // 30秒超时
+            .arg("-H")
+            .arg("User-Agent: rime_wanxiang_updater/1.0")
+            .arg("-H")
+            .arg("Accept: application/vnd.github+json");
+
+        // 如果配置了cookies，添加cookie参数
+        if !self.config.github_cookies.is_empty() {
+            println!("使用GitHub Cookies进行请求");
+            command
+                .arg("-H")
+                .arg(format!("Cookie: {}", self.config.github_cookies));
+        }
+
+        // 添加URL参数
+        command.arg(url);
+
+        let output = match command.output() {
+            Ok(output) => output,
+            Err(e) => {
+                println!("执行curl失败: {}", e);
+                return None;
+            }
+        };
 
         if output.status.success() {
             let response = String::from_utf8_lossy(&output.stdout).to_string();
-
-            // 检查是否是API错误响应
-            if let Ok(error) = serde_json::from_str::<GitHubApiError>(&response) {
-                eprintln!("GitHub API 错误: {}", error.message);
+            if response.trim().is_empty() {
+                println!("警告: 收到空响应");
                 return None;
             }
-
             Some(response)
         } else {
-            eprintln!("请求失败: {}", String::from_utf8_lossy(&output.stderr));
+            let error = String::from_utf8_lossy(&output.stderr);
+            println!("curl请求失败: {}", error);
+
+            // 如果使用了cookies但请求失败，提示用户检查cookies
+            if !self.config.github_cookies.is_empty() {
+                println!("提示: 请检查GitHub Cookies是否有效");
+            }
+
             None
         }
     }

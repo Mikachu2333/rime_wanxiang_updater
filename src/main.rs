@@ -8,7 +8,7 @@ mod update_checker;
 mod url_utils;
 mod version_choose;
 
-use config_read::get_config;
+use config_read::read_config;
 use types::UpdateInfo;
 use update_checker::UpdateChecker;
 
@@ -35,7 +35,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     let paths = path_get::get_path();
-    let config = get_config(&paths.config);
+    let config = read_config(&paths.config);
 
     println!("小狼毫路径: {:?}", paths.weasel);
     println!("用户目录: {:?}", paths.user);

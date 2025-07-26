@@ -52,6 +52,7 @@ pub struct UpdateConfig {
     pub model_name: String,
     pub model_tag: String,
     pub model_file_name: String,
+    pub github_cookies: String,
 }
 
 impl Default for UpdateConfig {
@@ -65,6 +66,7 @@ impl Default for UpdateConfig {
             model_name: "RIME-LMDG".to_string(),
             model_tag: "LTS".to_string(),
             model_file_name: "wanxiang-lts-zh-hans.gram".to_string(),
+            github_cookies: String::new(),
         }
     }
 }
