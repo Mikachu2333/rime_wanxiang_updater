@@ -1,3 +1,5 @@
+mod core;
+
 use crate::github_api::GitHubRelease;
 use crate::types::{UpdateConfig, UpdateInfo};
 use crate::url_utils::{
