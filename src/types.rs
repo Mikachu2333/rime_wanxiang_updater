@@ -12,7 +12,7 @@ pub struct UserPath {
 }
 
 /// 更新配置
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, serde::Deserialize)]
 pub struct UpdateConfig {
     pub scheme_repo: String,
     pub scheme_branch: String,
@@ -22,6 +22,8 @@ pub struct UpdateConfig {
     pub model_branch: String,
     pub self_repo: String,
     pub self_branch: String,
+    #[serde(default)]
+    pub mirror: String,
 }
 
 impl Default for UpdateConfig {
@@ -35,6 +37,7 @@ impl Default for UpdateConfig {
             model_branch: "main".to_string(),
             self_repo: "Mikachu2333/rime_wanxiang_updater".to_string(),
             self_branch: "main".to_string(),
+            mirror: "".to_string(),
         }
     }
 }

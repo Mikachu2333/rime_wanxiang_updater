@@ -24,7 +24,7 @@ impl GitHubClient {
                     tag: release_info.tag_name,
                     file_name: asset.name.clone(),
                     file_size: asset.size,
-                    url: asset.browser_download_url.clone(),
+                    url: self.convert_to_mirror_url(&asset.browser_download_url),
                     sha256: None,
                     update_time: release_info.published_at,
                     description: release_info.body.unwrap_or_default(),
@@ -44,7 +44,7 @@ impl GitHubClient {
                     tag: release_info.tag_name,
                     file_name: asset.name.clone(),
                     file_size: asset.size,
-                    url: asset.browser_download_url.clone(),
+                    url: self.convert_to_mirror_url(&asset.browser_download_url),
                     sha256: None,
                     update_time: release_info.published_at,
                     description: release_info.body.unwrap_or_default(),
@@ -64,7 +64,7 @@ impl GitHubClient {
                     tag: release_info.tag_name,
                     file_name: asset.name.clone(),
                     file_size: asset.size,
-                    url: asset.browser_download_url.clone(),
+                    url: self.convert_to_mirror_url(&asset.browser_download_url),
                     sha256: None,
                     update_time: release_info.published_at,
                     description: release_info.body.unwrap_or_default(),
@@ -90,7 +90,7 @@ impl GitHubClient {
                         tag: release_info.tag_name,
                         file_name: asset.name.clone(),
                         file_size: asset.size,
-                        url: asset.browser_download_url.clone(),
+                        url: self.convert_to_mirror_url(&asset.browser_download_url),
                         sha256: None,
                         update_time: release_info.published_at,
                         description: release_info.body.unwrap_or_default(),
@@ -99,6 +99,22 @@ impl GitHubClient {
             }
         }
         Ok(None)
+    }
+
+    /// 将 GitHub 下载链接转换为镜像站链接
+    fn convert_to_mirror_url(&self, github_url: &str) -> String {
+        // 检查镜像站配置是否不为空
+        if !self.config.mirror.is_empty() {
+            // 构建完整的镜像站 URL
+            let mirror_url = if self.config.mirror.starts_with("http") {
+                self.config.mirror.clone()
+            } else {
+                format!("https://{}", self.config.mirror)
+            };
+            // 将 GitHub 链接转换为镜像站链接
+            return github_url.replace("https://github.com", &mirror_url);
+        }
+        github_url.to_string()
     }
 
     /// 获取GitHub Release信息

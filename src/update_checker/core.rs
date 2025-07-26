@@ -4,7 +4,6 @@ use std::{collections::HashMap, fs, path::PathBuf};
 use super::{github_client::GitHubClient, file_operations::FileOperations, weasel_manager::WeaselManager};
 
 pub struct UpdateChecker {
-    pub config: UpdateConfig,
     pub cache_dir: PathBuf,
     github_client: GitHubClient,
     file_ops: FileOperations,
@@ -28,7 +27,6 @@ impl UpdateChecker {
         }
 
         Self {
-            config: config.clone(),
             cache_dir: cache_dir.clone(),
             github_client: GitHubClient::new(&paths.curl, config.clone()),
             file_ops: FileOperations::new(&paths.zip),
