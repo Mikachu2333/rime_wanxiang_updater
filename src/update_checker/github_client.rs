@@ -124,8 +124,14 @@ impl GitHubClient {
                 }
             }
             
-            let release: GitHubRelease = serde_json::from_str(&response)?;
-            Ok(Some(release))
+            match serde_json::from_str::<GitHubRelease>(&response) {
+                Ok(release) => Ok(Some(release)),
+                Err(e) => {
+                    eprintln!("解析GitHub Release响应失败: {}", e);
+                    eprintln!("响应内容: {}", response);
+                    Ok(None)
+                }
+            }
         } else {
             eprintln!("获取GitHub Release信息失败: {}", String::from_utf8_lossy(&output.stderr));
             Ok(None)

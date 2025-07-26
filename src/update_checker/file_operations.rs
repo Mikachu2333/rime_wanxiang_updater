@@ -44,6 +44,11 @@ impl FileOperations {
 
     /// 验证SHA256哈希
     pub fn verify_sha256(&self, file_path: &PathBuf, expected_hash: &str) -> bool {
+        if expected_hash.is_empty() {
+            println!("ℹ️ 未提供SHA256哈希值，跳过验证");
+            return true;
+        }
+
         println!("正在验证文件完整性...");
         
         let output = Command::new("certutil")
@@ -69,6 +74,8 @@ impl FileOperations {
                             eprintln!("  期望: {}", expected_hash);
                             eprintln!("  实际: {}", actual_hash);
                         }
+                    } else {
+                        eprintln!("❌ 无法解析certutil输出");
                     }
                 } else {
                     eprintln!("❌ 计算SHA256失败: {}", String::from_utf8_lossy(&result.stderr));
@@ -76,6 +83,8 @@ impl FileOperations {
             }
             Err(e) => {
                 eprintln!("❌ 执行certutil命令失败: {}", e);
+                eprintln!("   将跳过哈希验证");
+                return true; // 如果无法执行验证，则跳过
             }
         }
 

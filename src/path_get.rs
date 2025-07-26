@@ -126,8 +126,8 @@ fn config_exist(config_path: &PathBuf) {
     }
 }
 
+#[cfg(test)]
 mod tests {
-    #[allow(unused_imports)]
     use super::*;
 
     #[test]

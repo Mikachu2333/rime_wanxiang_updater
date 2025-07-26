@@ -85,34 +85,4 @@ impl WeaselManager {
                 .spawn();
         }
     }
-
-    /// 重启小狼毫服务
-    pub fn restart_service(&self) -> bool {
-        println!("正在重启小狼毫服务...");
-
-        let weasel_server = self.weasel_root.join("WeaselServer.exe");
-
-        // 先停止服务
-        let _ = Command::new("taskkill")
-            .args(&["/f", "/im", "WeaselServer.exe"])
-            .status();
-
-        // 等待一下
-        thread::sleep(Duration::from_secs(2));
-
-        // 重新启动服务
-        let output = Command::new(&weasel_server)
-            .spawn();
-
-        match output {
-            Ok(_) => {
-                println!("✅ 小狼毫服务重启成功");
-                true
-            }
-            Err(e) => {
-                eprintln!("❌ 重启小狼毫服务失败: {}", e);
-                false
-            }
-        }
-    }
 }

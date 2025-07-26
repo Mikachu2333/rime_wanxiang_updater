@@ -10,12 +10,9 @@
 use std::{fs, os::windows::process::CommandExt, path::PathBuf};
 
 mod config_read;
-mod github_api;
 mod path_get;
 mod types;
 mod update_checker;
-mod url_utils;
-mod version_choose;
 
 use config_read::read_config;
 use types::UpdateInfo;
