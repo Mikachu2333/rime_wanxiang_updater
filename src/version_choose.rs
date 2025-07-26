@@ -1,1 +1,0 @@
-// 此文件已移动到 update_checker/github_client.rs 中实现版本比较功能
