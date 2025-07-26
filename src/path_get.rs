@@ -5,17 +5,15 @@ use std::{path::PathBuf, process::Command};
 const CONF_FILENAME: &str = "updater_conf.ini";
 
 pub fn get_path() -> UserPath {
-    let user_path = get_user_path();
-    let config = get_config_path(&user_path);
-    config.canonicalize().unwrap();
+    let (user_path, config_path) = get_user_path();
     UserPath {
         weasel: get_exe_path(),
-        user: get_user_path(),
-        config: config,
+        user: user_path,
+        config: config_path,
     }
 }
 
-fn get_user_path() -> PathBuf {
+fn get_user_path() -> (PathBuf, PathBuf) {
     let output = Command::new("powershell")
         .args([
             "-Command",
@@ -27,9 +25,14 @@ fn get_user_path() -> PathBuf {
         .expect("未安装 PowerShell 或 调用失败");
 
     if output.status.success() {
-        parse_user_path(
+        let user = parse_user_path(
             String::from_utf8(output.stdout).expect("Failed to convert output to string."),
-        )
+        );
+        let config = format!("{}/{}", user, CONF_FILENAME);
+        let packed_config = PathBuf::from(config);
+        config_exist(&packed_config);
+
+        (PathBuf::from(user), packed_config)
     } else {
         panic!(
             "Failed to get Rime user directory: {}",
@@ -61,8 +64,8 @@ fn get_exe_path() -> PathBuf {
     }
 }
 
-fn parse_user_path(output: String) -> PathBuf {
-    let mut result = PathBuf::new();
+fn parse_user_path(output: String) -> String {
+    let mut result = String::new();
     for line in output.lines() {
         if line.contains("RimeUserDir") {
             let user_path_str = line
@@ -77,9 +80,7 @@ fn parse_user_path(output: String) -> PathBuf {
                 })
                 .unwrap();
             dbg!(&user_path_str);
-            let temp = PathBuf::from(user_path_str);
-            temp.canonicalize().unwrap();
-            result = temp;
+            result = user_path_str.to_string();
             break;
         }
     }
@@ -111,19 +112,14 @@ fn parse_exe_path(output: String) -> PathBuf {
     result
 }
 
-fn get_config_path(user: &PathBuf) -> PathBuf {
-    let user_config = user.join(CONF_FILENAME);
-    dbg!(&user_config);
-    if user_config.exists() {
-        user_config
-    } else {
+fn config_exist(config_path: &PathBuf) {
+    dbg!(&config_path);
+    if !config_path.exists() {
         #[derive(Embed)]
         #[folder = "res/"]
         struct Asset;
         let ini_res = Asset::get(&CONF_FILENAME).expect("Error read embedded INI res file.");
-        let _ = std::fs::write(&user_config, ini_res.data.as_ref()).expect("Error write INI file.");
-
-        user_config
+        let _ = std::fs::write(&config_path, ini_res.data.as_ref()).expect("Error write INI file.");
     }
 }
 

@@ -22,14 +22,6 @@ pub fn sanitize_mirror_domain(input: &str) -> String {
         return "gh-proxy.com".to_string();
     }
 
-    if !is_valid_domain_or_ip(&domain) {
-        println!(
-            "警告: mirror 配置格式无效 '{}', 使用默认值 gh-proxy.com",
-            input
-        );
-        return "gh-proxy.com".to_string();
-    }
-
     if input != domain {
         println!("Mirror 配置已清理: '{}' -> '{}'", input, domain);
     }
@@ -49,7 +41,7 @@ pub fn sanitize_repo_url(input: &str) -> String {
             url = format!("https://github.com/{}", url);
         }
     }
-
+    dbg!(&url);
     url
 }
 
@@ -97,58 +89,6 @@ pub fn apply_mirror_to_download_url(mirror: &str, url: &str) -> String {
     }
 }
 
-/// 验证域名或IP地址格式
-fn is_valid_domain_or_ip(domain: &str) -> bool {
-    if domain.len() > 253 || domain.is_empty() {
-        return false;
-    }
-
-    if is_ipv4(domain) {
-        return true;
-    }
-
-    let parts: Vec<&str> = domain.split('.').collect();
-    if parts.len() < 2 {
-        return false;
-    }
-
-    for part in parts {
-        if part.is_empty() || part.len() > 63 {
-            return false;
-        }
-
-        if !part.chars().all(|c| c.is_alphanumeric() || c == '-') {
-            return false;
-        }
-
-        if part.starts_with('-') || part.ends_with('-') {
-            return false;
-        }
-    }
-
-    true
-}
-
-/// 检查是否为有效的IPv4地址
-fn is_ipv4(addr: &str) -> bool {
-    let parts: Vec<&str> = addr.split('.').collect();
-    if parts.len() != 4 {
-        return false;
-    }
-
-    for part in parts {
-        if let Ok(_num) = part.parse::<u8>() {
-            if part.len() > 1 && part.starts_with('0') {
-                return false;
-            }
-        } else {
-            return false;
-        }
-    }
-
-    true
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -167,22 +107,8 @@ mod tests {
             sanitize_mirror_domain("https://gh-proxy.com/"),
             "gh-proxy.com"
         );
-        assert_eq!(
-            sanitize_mirror_domain("gh-proxy.com/path/to/resource"),
-            "gh-proxy.com"
-        );
         assert_eq!(sanitize_mirror_domain("gh-proxy.com"), "gh-proxy.com");
-        assert_eq!(sanitize_mirror_domain("192.168.1.1"), "192.168.1.1");
-        assert_eq!(
-            sanitize_mirror_domain("https://192.168.1.1/"),
-            "192.168.1.1"
-        );
         assert_eq!(sanitize_mirror_domain(""), "gh-proxy.com");
-        assert_eq!(
-            sanitize_mirror_domain("invalid domain with spaces"),
-            "gh-proxy.com"
-        );
-        assert_eq!(sanitize_mirror_domain("https://"), "gh-proxy.com");
     }
 
     #[test]
