@@ -120,6 +120,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 } else {
                     println!("❌ 部署失败，请手动重新部署");
                 }
+            } else if !updates.is_empty() {
+                println!("\n所有更新已完成，但无需重新部署。");
             }
         }
         Err(e) => {

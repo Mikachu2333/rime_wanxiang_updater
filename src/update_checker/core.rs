@@ -28,7 +28,7 @@ impl UpdateChecker {
             config: config.clone(),
             cache_dir: cache_dir.clone(),
             github_client: GitHubClient::new(curl_path.clone(), config.clone()),
-            file_ops: FileOperations::new(),
+            file_ops: FileOperations::new(weasel_path.clone()),
             weasel_mgr: WeaselManager::new(weasel_path.clone()),
         }
     }
@@ -36,6 +36,14 @@ impl UpdateChecker {
     /// 检查所有更新
     pub fn check_all_updates(&self) -> Result<HashMap<String, UpdateInfo>, Box<dyn std::error::Error>> {
         let mut updates = HashMap::new();
+
+        // 检查方案更新
+        if let Some(scheme_info) = self.github_client.check_scheme_update()? {
+            let cache_path = self.cache_dir.join("scheme_info.json");
+            if self.should_update(&scheme_info, &cache_path) {
+                updates.insert("scheme".to_string(), scheme_info);
+            }
+        }
 
         // 检查字典更新
         if let Some(dict_info) = self.github_client.check_dict_update()? {

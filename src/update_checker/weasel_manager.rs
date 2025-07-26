@@ -9,55 +9,65 @@ impl WeaselManager {
         Self { weasel_path }
     }
 
-    /// 终止小狼毫进程
-    pub fn terminate_processes(&self) {
-        println!("正在终止小狼毫进程...");
-
-        let server_exe = self.weasel_path.join("WeaselServer.exe");
-        if server_exe.exists() {
-            let _ = Command::new(server_exe).arg("/q").output();
-        }
-
-        thread::sleep(Duration::from_millis(500));
-
-        let _ = Command::new("taskkill")
-            .args(["/IM", "WeaselServer.exe", "/F"])
-            .output();
-
-        let _ = Command::new("taskkill")
-            .args(["/IM", "WeaselDeployer.exe", "/F"])
-            .output();
-
-        println!("进程终止完成");
-    }
-
     /// 部署小狼毫
-    pub fn deploy(&self) -> bool {
+    pub fn deploy(&self, weasel_path: &PathBuf) -> bool {
         println!("正在部署小狼毫...");
 
-        let server_exe = self.weasel_path.join("WeaselServer.exe");
-        if server_exe.exists() {
-            let _ = Command::new(&server_exe).spawn();
-            thread::sleep(Duration::from_secs(2));
+        let weasel_deployer = weasel_path.join("WeaselDeployer.exe");
+        if !weasel_deployer.exists() {
+            eprintln!("❌ 未找到 WeaselDeployer.exe: {:?}", weasel_deployer);
+            return false;
         }
 
-        let deployer_exe = self.weasel_path.join("WeaselDeployer.exe");
-        if deployer_exe.exists() {
-            let output = Command::new(deployer_exe)
-                .arg("/deploy")
-                .output()
-                .expect("部署器执行失败");
+        let output = Command::new(&weasel_deployer)
+            .arg("/deploy")
+            .output();
 
-            if output.status.success() {
-                println!("✅ 部署成功");
-                true
-            } else {
-                eprintln!("❌ 部署失败: {}", String::from_utf8_lossy(&output.stderr));
+        match output {
+            Ok(result) => {
+                if result.status.success() {
+                    println!("✅ 小狼毫部署完成");
+                    true
+                } else {
+                    eprintln!("❌ 小狼毫部署失败: {}", String::from_utf8_lossy(&result.stderr));
+                    false
+                }
+            }
+            Err(e) => {
+                eprintln!("❌ 执行部署命令失败: {}", e);
                 false
             }
-        } else {
-            eprintln!("❌ 未找到部署器");
-            false
+        }
+    }
+
+    /// 重启小狼毫服务
+    pub fn restart_service(&self) -> bool {
+        println!("正在重启小狼毫服务...");
+
+        let weasel_server = self.weasel_path.join("WeaselServer.exe");
+        if !weasel_server.exists() {
+            eprintln!("❌ 未找到 WeaselServer.exe: {:?}", weasel_server);
+            return false;
+        }
+
+        // 先停止服务
+        let _ = Command::new("taskkill")
+            .args(&["/F", "/IM", "WeaselServer.exe"])
+            .output();
+
+        // 等待一下再启动
+        thread::sleep(Duration::from_millis(1000));
+
+        // 启动服务
+        match Command::new(&weasel_server).spawn() {
+            Ok(_) => {
+                println!("✅ 小狼毫服务重启完成");
+                true
+            }
+            Err(e) => {
+                eprintln!("❌ 启动小狼毫服务失败: {}", e);
+                false
+            }
         }
     }
 }

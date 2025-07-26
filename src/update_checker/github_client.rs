@@ -1,7 +1,5 @@
 use crate::types::{UpdateConfig, UpdateInfo};
-use crate::url_utils::{build_releases_tag_api_url, apply_mirror_to_download_url};
-use serde_json::Value;
-use std::{path::PathBuf, process::Command};
+use std::{fs, path::PathBuf, process::Command};
 
 pub struct GitHubClient {
     curl_path: PathBuf,
@@ -15,154 +13,105 @@ impl GitHubClient {
 
     /// 检查字典更新
     pub fn check_dict_update(&self) -> Result<Option<UpdateInfo>, Box<dyn std::error::Error>> {
-        let url = build_releases_tag_api_url(
-            &self.config.owner,
-            &self.config.repo,
-            &self.config.dict_releases_tag,
-        );
+        if !self.config.dict_enabled {
+            return Ok(None);
+        }
+        
+        self.check_repo_update(&self.config.dict_repo, "dict")
+    }
 
-        let response_json = self.fetch_json(&url)?;
-        let release: Value = serde_json::from_str(&response_json)?;
-        Ok(self.parse_release_info(release, "dict"))
+    /// 检查方案更新
+    pub fn check_scheme_update(&self) -> Result<Option<UpdateInfo>, Box<dyn std::error::Error>> {
+        if !self.config.scheme_enabled {
+            return Ok(None);
+        }
+        
+        self.check_repo_update(&self.config.scheme_repo, "scheme")
     }
 
     /// 检查模型更新
     pub fn check_model_update(&self) -> Result<Option<UpdateInfo>, Box<dyn std::error::Error>> {
-        let url = build_releases_tag_api_url(
-            &self.config.owner,
-            &self.config.repo,
-            &self.config.model_tag,
-        );
-
-        let response_json = self.fetch_json(&url)?;
-        let release: Value = serde_json::from_str(&response_json)?;
-        Ok(self.parse_release_info(release, "model"))
+        if !self.config.model_enabled {
+            return Ok(None);
+        }
+        
+        self.check_repo_update(&self.config.model_repo, "model")
     }
 
     /// 检查程序自身更新
     pub fn check_self_update(&self) -> Result<Option<UpdateInfo>, Box<dyn std::error::Error>> {
-        let url = "https://api.github.com/repos/Mikachu2333/rime_wanxiang_updater/releases/latest";
-        
-        let response_json = self.fetch_json(&url)?;
-        let release: Value = serde_json::from_str(&response_json)?;
-
-        // 检查是否为稳定版本
-        if release["prerelease"].as_bool().unwrap_or(true) {
+        if !self.config.self_update_enabled {
             return Ok(None);
         }
-
-        let tag_name = release["tag_name"].as_str().unwrap_or("");
-        let current_version = env!("CARGO_PKG_VERSION");
         
-        if !self.is_newer_version(tag_name, current_version) {
-            return Ok(None);
-        }
-
-        Ok(self.parse_release_info(release, "self"))
+        self.check_repo_update(&self.config.self_repo, "self")
     }
 
-    /// 从curl获取JSON数据
-    fn fetch_json(&self, url: &str) -> Result<String, Box<dyn std::error::Error>> {
-        println!("正在请求: {}", url);
-
-        let mut command = Command::new(&self.curl_path);
+    /// 通用的仓库更新检查方法
+    fn check_repo_update(&self, repo: &str, component_type: &str) -> Result<Option<UpdateInfo>, Box<dyn std::error::Error>> {
+        let api_url = format!("https://api.github.com/repos/{}/releases/latest", repo);
+        let temp_file = std::env::temp_dir().join(format!("{}_latest.json", component_type));
         
-        command
-            .arg("-s")
-            .arg("-L")
-            .arg("--fail")
-            .arg("--max-time")
-            .arg("30")
-            .arg("-H")
-            .arg("User-Agent: rime_wanxiang_updater/1.0")
-            .arg("-H")
-            .arg("Accept: application/vnd.github+json");
+        // 使用curl获取最新发布信息
+        let output = Command::new(&self.curl_path)
+            .args(&[
+                "-s", "-L", 
+                "-H", "Accept: application/vnd.github.v3+json",
+                "-H", "User-Agent: RimeWanxiangUpdater/1.0",
+                "-o", temp_file.to_str().unwrap(),
+                &api_url
+            ])
+            .output()?;
 
-        if !self.config.github_cookies.is_empty() {
-            println!("使用GitHub Cookies进行请求");
-            command
-                .arg("-H")
-                .arg(format!("Cookie: {}", self.config.github_cookies));
+        if !output.status.success() {
+            return Err(format!("获取{}更新信息失败", component_type).into());
         }
 
-        command.arg(url);
+        // 读取并解析JSON响应
+        let content = fs::read_to_string(&temp_file)?;
+        let release: serde_json::Value = serde_json::from_str(&content)?;
+        
+        // 清理临时文件
+        let _ = fs::remove_file(&temp_file);
 
-        let output = command.output()?;
-
-        if output.status.success() {
-            let response = String::from_utf8_lossy(&output.stdout).to_string();
-            if response.trim().is_empty() {
-                return Err("收到空响应".into());
-            }
-            Ok(response)
-        } else {
-            let error = String::from_utf8_lossy(&output.stderr);
-            Err(format!("curl请求失败: {}", error).into())
-        }
-    }
-
-    /// 解析发布信息
-    fn parse_release_info(&self, release: Value, update_type: &str) -> Option<UpdateInfo> {
-        let tag_name = release["tag_name"].as_str().unwrap_or("").to_string();
-        let published_at = release["published_at"].as_str().unwrap_or("").to_string();
-        let description = release["body"].as_str().unwrap_or("").to_string();
-
+        // 解析发布信息
         if let Some(assets) = release["assets"].as_array() {
-            for asset in assets {
-                let file_name = asset["name"].as_str().unwrap_or("");
-                
-                let matches = match update_type {
-                    "model" => file_name == self.config.model_file_name,
-                    "dict" => file_name.contains("dict") || file_name.ends_with(".zip"),
-                    "self" => file_name.ends_with(".exe") || file_name.contains("windows"),
-                    _ => false,
+            // 根据组件类型选择合适的资产
+            let asset = match component_type {
+                "dict" => assets.iter().find(|a| {
+                    let name = a["name"].as_str().unwrap_or("");
+                    name.contains("dict") || name.ends_with(".zip")
+                }),
+                "scheme" => assets.iter().find(|a| {
+                    let name = a["name"].as_str().unwrap_or("");
+                    name.contains("scheme") || name.ends_with(".zip")
+                }),
+                "model" => assets.iter().find(|a| {
+                    let name = a["name"].as_str().unwrap_or("");
+                    name.contains("model") || name.ends_with(".dat")
+                }),
+                "self" => assets.iter().find(|a| {
+                    let name = a["name"].as_str().unwrap_or("");
+                    name.ends_with(".exe")
+                }),
+                _ => assets.first(),
+            };
+
+            if let Some(asset) = asset {
+                let update_info = UpdateInfo {
+                    tag: release["tag_name"].as_str().unwrap_or("").to_string(),
+                    url: asset["browser_download_url"].as_str().unwrap_or("").to_string(),
+                    file_name: asset["name"].as_str().unwrap_or("").to_string(),
+                    file_size: asset["size"].as_u64().unwrap_or(0),
+                    update_time: release["published_at"].as_str().unwrap_or("").to_string(),
+                    description: release["body"].as_str().unwrap_or("").to_string(),
+                    sha256: String::new(), // GitHub API不直接提供SHA256
                 };
-
-                if matches {
-                    let original_url = asset["browser_download_url"].as_str().unwrap_or("");
-                    let download_url = if self.config.mirror.is_empty() {
-                        original_url.to_string()
-                    } else {
-                        apply_mirror_to_download_url(&self.config.mirror, original_url)
-                    };
-
-                    return Some(UpdateInfo {
-                        url: download_url,
-                        update_time: published_at,
-                        tag: tag_name,
-                        sha256: String::new(),
-                        description,
-                        file_size: asset["size"].as_u64().unwrap_or(0),
-                        file_name: file_name.to_string(),
-                    });
-                }
+                
+                return Ok(Some(update_info));
             }
         }
 
-        None
-    }
-
-    /// 版本比较
-    fn is_newer_version(&self, remote_version: &str, current_version: &str) -> bool {
-        let remote_version = remote_version.trim_start_matches('v');
-        let current_version = current_version.trim_start_matches('v');
-
-        let remote_parts: Vec<u32> = remote_version
-            .split('.')
-            .filter_map(|s| s.parse().ok())
-            .collect();
-        let current_parts: Vec<u32> = current_version
-            .split('.')
-            .filter_map(|s| s.parse().ok())
-            .collect();
-
-        let max_len = remote_parts.len().max(current_parts.len());
-        let mut remote_normalized = remote_parts;
-        let mut current_normalized = current_parts;
-
-        remote_normalized.resize(max_len, 0);
-        current_normalized.resize(max_len, 0);
-
-        remote_normalized > current_normalized
+        Ok(None)
     }
 }

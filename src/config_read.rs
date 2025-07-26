@@ -1,39 +1,56 @@
 use crate::types::UpdateConfig;
-use crate::url_utils::{parse_github_repo, sanitize_repo_url};
+use std::{fs, path::PathBuf};
 
-pub fn read_config(config_path: &std::path::Path) -> UpdateConfig {
-    let mut config = UpdateConfig::default();
-
-    if let Ok(content) = std::fs::read_to_string(config_path) {
-        for line in content.lines() {
-            let line = line.trim();
-            if line.is_empty() || line.starts_with('#') || line.starts_with(';') {
-                continue;
-            }
-
-            if let Some((key, value)) = line.split_once('=') {
-                let key = key.trim();
-                let value = value.trim().trim_matches('"'); // 移除引号
-
-                match key {
-                    "mirror" => config.mirror = value.to_string(),
-                    "repo_url" => {
-                        config.repo_url = sanitize_repo_url(value);
-                        if let Some((owner, repo)) = parse_github_repo(&config.repo_url) {
-                            config.owner = owner;
-                            config.repo = repo;
-                        }
+/// 读取配置文件
+pub fn read_config(config_path: &PathBuf) -> UpdateConfig {
+    if config_path.exists() {
+        match fs::read_to_string(config_path) {
+            Ok(content) => {
+                match serde_json::from_str::<UpdateConfig>(&content) {
+                    Ok(config) => {
+                        println!("✅ 配置文件加载成功");
+                        return config;
                     }
-                    "dict_releases_tag" => config.dict_releases_tag = value.to_string(),
-                    "model_name" => config.model_name = value.to_string(),
-                    "model_tag" => config.model_tag = value.to_string(),
-                    "model_file_name" => config.model_file_name = value.to_string(),
-                    "github_cookies" => config.github_cookies = value.to_string(), // 新增cookies解析
-                    _ => {}
+                    Err(e) => {
+                        eprintln!("⚠️ 配置文件格式错误: {}", e);
+                        eprintln!("   将使用默认配置");
+                    }
                 }
             }
+            Err(e) => {
+                eprintln!("⚠️ 读取配置文件失败: {}", e);
+                eprintln!("   将使用默认配置");
+            }
         }
+    } else {
+        println!("ℹ️ 配置文件不存在，创建默认配置");
     }
 
-    config
+    // 使用默认配置并保存
+    let default_config = UpdateConfig::default();
+    save_config(&default_config, config_path);
+    default_config
+}
+
+/// 保存配置文件
+pub fn save_config(config: &UpdateConfig, config_path: &PathBuf) {
+    match serde_json::to_string_pretty(config) {
+        Ok(content) => {
+            if let Some(parent) = config_path.parent() {
+                if let Err(e) = fs::create_dir_all(parent) {
+                    eprintln!("创建配置目录失败: {}", e);
+                    return;
+                }
+            }
+
+            if let Err(e) = fs::write(config_path, content) {
+                eprintln!("保存配置文件失败: {}", e);
+            } else {
+                println!("✅ 配置文件已保存到: {:?}", config_path);
+            }
+        }
+        Err(e) => {
+            eprintln!("序列化配置失败: {}", e);
+        }
+    }
 }

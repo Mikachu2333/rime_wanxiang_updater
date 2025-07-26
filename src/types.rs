@@ -1,4 +1,50 @@
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateConfig {
+    // 字典更新配置
+    pub dict_enabled: bool,
+    pub dict_repo: String,
+
+    // 方案更新配置
+    pub scheme_enabled: bool,
+    pub scheme_repo: String,
+
+    // 模型更新配置
+    pub model_enabled: bool,
+    pub model_repo: String,
+
+    // 程序自更新配置
+    pub self_update_enabled: bool,
+    pub self_repo: String,
+}
+
+impl Default for UpdateConfig {
+    fn default() -> Self {
+        Self {
+            dict_enabled: true,
+            dict_repo: "amzxyz/rime_wanxiang".to_string(),
+            scheme_enabled: true,
+            scheme_repo: "amzxyz/rime_wanxiang".to_string(),
+            model_enabled: true,
+            model_repo: "amzxyz/rime_wanxiang".to_string(),
+            self_update_enabled: true,
+            self_repo: "Mikachu2333/rime_wanxiang_updater".to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateInfo {
+    pub tag: String,
+    pub url: String,
+    pub file_name: String,
+    pub file_size: u64,
+    pub update_time: String,
+    pub description: String,
+    pub sha256: String,
+}
 
 #[derive(Debug)]
 pub struct UserPath {
@@ -13,60 +59,6 @@ impl Default for UserPath {
             weasel: PathBuf::new(),
             user: PathBuf::new(),
             config: PathBuf::new(),
-        }
-    }
-}
-
-#[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
-pub struct UpdateInfo {
-    pub url: String,
-    pub update_time: String,
-    pub tag: String,
-    pub sha256: String,
-    pub description: String,
-    pub file_size: u64,
-    pub file_name: String,
-}
-
-impl Default for UpdateInfo {
-    fn default() -> Self {
-        UpdateInfo {
-            url: String::new(),
-            update_time: String::new(),
-            tag: String::new(),
-            sha256: String::new(),
-            description: String::new(),
-            file_size: 0,
-            file_name: String::new(),
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct UpdateConfig {
-    pub mirror: String,
-    pub repo_url: String,
-    pub owner: String,
-    pub repo: String,
-    pub dict_releases_tag: String,
-    pub model_name: String,
-    pub model_tag: String,
-    pub model_file_name: String,
-    pub github_cookies: String,
-}
-
-impl Default for UpdateConfig {
-    fn default() -> Self {
-        UpdateConfig {
-            mirror: "gh-proxy.com".to_string(),
-            repo_url: "https://github.com/amzxyz/rime_wanxiang".to_string(),
-            owner: "amzxyz".to_string(),
-            repo: "rime_wanxiang".to_string(),
-            dict_releases_tag: "dict-nightly".to_string(),
-            model_name: "RIME-LMDG".to_string(),
-            model_tag: "LTS".to_string(),
-            model_file_name: "wanxiang-lts-zh-hans.gram".to_string(),
-            github_cookies: String::new(),
         }
     }
 }
