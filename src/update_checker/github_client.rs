@@ -205,7 +205,7 @@ impl GitHubClient {
 
             match serde_json::from_str::<Vec<GitHubRelease>>(&response) {
                 Ok(releases) => {
-                    println!("✅ 成功解析 {} 个 Releases", releases.len());
+                    dbg!("✅ 成功解析 {} 个 Releases", releases.len());
                     Ok(Some(releases))
                 }
                 Err(e) => {
