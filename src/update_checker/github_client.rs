@@ -15,15 +15,15 @@ impl GitHubClient {
     }
 
     /// 检查方案更新
-    pub fn check_scheme_update(&self) -> Result<Option<UpdateInfo>, Box<dyn std::error::Error>> {
+    pub fn check_schema_update(&self) -> Result<Option<UpdateInfo>, Box<dyn std::error::Error>> {
         println!("🔍 检查方案更新...");
         let api_url = format!(
             "https://api.github.com/repos/{}/releases/latest",
-            self.config.scheme_repo
+            self.config.schema_repo
         );
         if let Some(release_info) = self.fetch_release_info(&api_url)? {
             // 查找方案相关的资产
-            if let Some(asset) = self.find_scheme_asset(&release_info.assets) {
+            if let Some(asset) = self.find_schema_asset(&release_info.assets) {
                 println!("✅ 找到方案资产: {}", asset.name);
                 return Ok(Some(UpdateInfo {
                     tag: release_info.tag_name,
@@ -222,10 +222,11 @@ impl GitHubClient {
     }
 
     /// 查找方案相关的资产文件
-    fn find_scheme_asset<'a>(&self, assets: &'a [GitHubAsset]) -> Option<&'a GitHubAsset> {
-        // 首先尝试精确匹配配置中的scheme_tag
+    fn find_schema_asset<'a>(&self, assets: &'a [GitHubAsset]) -> Option<&'a GitHubAsset> {
+        // 首先尝试精确匹配配置中的schema_name
         for asset in assets {
-            if asset.name == self.config.scheme_tag {
+            let name  = asset.name.to_lowercase();
+            if name == self.config.schema_name.to_lowercase() {
                 return Some(asset);
             }
         }
@@ -233,9 +234,8 @@ impl GitHubClient {
         // 如果精确匹配失败，尝试模糊匹配
         for asset in assets {
             let name = asset.name.to_lowercase();
-            if name.contains("scheme")
-                || name.contains("方案")
-                || name.contains(&self.config.scheme_name.to_lowercase())
+            let schema_name_lower = self.config.schema_name.to_lowercase();
+            if name.contains("scheme") || name.contains("方案") || name.contains(&schema_name_lower)
             {
                 return Some(asset);
             }
@@ -247,7 +247,8 @@ impl GitHubClient {
     fn find_dict_asset<'a>(&self, assets: &'a [GitHubAsset]) -> Option<&'a GitHubAsset> {
         // 首先尝试精确匹配配置中的dict_name
         for asset in assets {
-            if asset.name == self.config.dict_name {
+            let name = asset.name.to_lowercase();
+            if name == self.config.dict_name.to_lowercase() {
                 return Some(asset);
             }
         }
@@ -266,7 +267,8 @@ impl GitHubClient {
     fn find_model_asset<'a>(&self, assets: &'a [GitHubAsset]) -> Option<&'a GitHubAsset> {
         // 首先尝试精确匹配配置中的model_file_name
         for asset in assets {
-            if asset.name == self.config.model_file_name {
+            let name = asset.name.to_lowercase();
+            if name == self.config.model_file_name.to_lowercase() {
                 return Some(asset);
             }
         }
@@ -274,10 +276,8 @@ impl GitHubClient {
         // 如果精确匹配失败，尝试模糊匹配
         for asset in assets {
             let name = asset.name.to_lowercase();
-            if name.contains("model")
-                || name.contains("模型")
+            if name.trim().to_lowercase() == self.config.model_file_name.to_lowercase()
                 || name.contains(".gram")
-                || name.contains(&self.config.model_name.to_lowercase())
             {
                 return Some(asset);
             }
@@ -289,7 +289,7 @@ impl GitHubClient {
     fn find_self_asset<'a>(&self, assets: &'a [GitHubAsset]) -> Option<&'a GitHubAsset> {
         for asset in assets {
             let name = asset.name.to_lowercase();
-            if name.contains("updater") || name.ends_with(".exe") {
+            if name.ends_with(".exe") {
                 return Some(asset);
             }
         }

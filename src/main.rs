@@ -85,7 +85,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                     // 处理各个组件的更新
                     match component.as_str() {
-                        "scheme" => {
+                        "schema" => {
                             if perform_update(&checker, info, &paths.user, "方案") {
                                 has_updates = true;
                             }
