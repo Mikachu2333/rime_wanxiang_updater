@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+// ===== 核心业务类型 =====
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpdateInfo {
     pub tag: String,
@@ -30,6 +32,46 @@ pub struct UpdateConfig {
     pub github_cookies: String,
 }
 
+#[derive(Debug, Clone)]
+pub struct UserPath {
+    pub user: PathBuf,
+    pub weasel: PathBuf,
+    pub config: PathBuf,
+    pub curl: PathBuf,
+    pub zip: PathBuf,
+}
+
+// ===== GitHub API 相关类型 =====
+
+/// GitHub Release 响应结构
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct GitHubRelease {
+    pub tag_name: String,
+    pub published_at: String,
+    pub body: Option<String>,
+    pub assets: Vec<GitHubAsset>,
+}
+
+/// GitHub Asset 响应结构
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct GitHubAsset {
+    pub name: String,
+    pub size: u64,
+    pub browser_download_url: String,
+    #[serde(rename = "sha3-256")]
+    pub sha3_256: Option<String>,
+}
+
+/// GitHub API 错误响应结构
+#[derive(Debug, Clone, serde::Deserialize)]
+#[allow(dead_code)]
+pub struct GitHubApiError {
+    pub message: String,
+    pub documentation_url: Option<String>,
+}
+
+// ===== 实现默认值 =====
+
 impl Default for UpdateConfig {
     fn default() -> Self {
         let config = Self {
@@ -51,13 +93,4 @@ impl Default for UpdateConfig {
         println!("默认配置 - model_repo: {}", config.model_repo);
         config
     }
-}
-
-#[derive(Debug, Clone)]
-pub struct UserPath {
-    pub user: PathBuf,
-    pub weasel: PathBuf,
-    pub config: PathBuf,
-    pub curl: PathBuf,
-    pub zip: PathBuf,
 }

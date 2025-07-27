@@ -14,7 +14,7 @@ impl FileOperations {
     /// 下载文件
     pub fn download_file(&self, curl_path: &PathBuf, url: &str, save_path: &PathBuf) -> bool {
         println!("正在下载: {}", url);
-        
+
         // 如果文件已存在，先删除
         if save_path.exists() {
             if let Err(e) = std::fs::remove_file(save_path) {
@@ -22,15 +22,19 @@ impl FileOperations {
                 return false;
             }
         }
-        
+
         let output = Command::new(curl_path)
             .args(&[
-                "-L",           // 跟随重定向
+                "-C",
+                "-",              // 断点续传
+                "-L",             // 跟随重定向
                 "--progress-bar", // 显示进度条
-                "--fail",       // 在HTTP错误时失败
-                "--connect-timeout", "30", // 连接超时
-                "--max-time", "1800",      // 最大下载时间(30分钟)
-                "-o",           // 输出文件
+                "--fail",         // 在HTTP错误时失败
+                "--connect-timeout",
+                "30", // 连接超时
+                "--max-time",
+                "1800", // 最大下载时间(30分钟)
+                "-o",   // 输出文件
             ])
             .arg(save_path)
             .arg(url)
@@ -41,11 +45,10 @@ impl FileOperations {
                 if result.status.success() {
                     // 验证文件是否确实下载完成
                     if save_path.exists() {
-                        let file_size = std::fs::metadata(save_path)
-                            .map(|m| m.len())
-                            .unwrap_or(0);
-                        
-                        if file_size > 1000 { // 至少1KB，避免下载失败的小文件
+                        let file_size = std::fs::metadata(save_path).map(|m| m.len()).unwrap_or(0);
+
+                        if file_size > 1000 {
+                            // 至少1KB，避免下载失败的小文件
                             println!("✅ 下载完成: {:?} ({} bytes)", save_path, file_size);
                             true
                         } else {
@@ -75,12 +78,12 @@ impl FileOperations {
     /// 解压ZIP文件
     pub fn extract_zip(&self, zip_path: &PathBuf, extract_path: &PathBuf) -> bool {
         println!("正在解压文件...");
-        
+
         let output = Command::new(&self.zip_path)
-            .args(&["x"])           // 解压命令
-            .arg(zip_path)          // 源文件
+            .args(&["x"]) // 解压命令
+            .arg(zip_path) // 源文件
             .arg(&format!("-o{}", extract_path.display())) // 输出目录
-            .arg("-y")              // 覆盖确认
+            .arg("-y") // 覆盖确认
             .status();
 
         match output {

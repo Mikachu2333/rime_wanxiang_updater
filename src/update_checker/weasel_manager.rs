@@ -1,4 +1,6 @@
-use std::{path::PathBuf, process::Command, thread, time::Duration};
+use std::{
+    os::windows::process::CommandExt, path::PathBuf, process::Command, thread, time::Duration,
+};
 
 pub struct WeaselManager {
     weasel_root: PathBuf,
@@ -28,9 +30,7 @@ impl WeaselManager {
         thread::sleep(Duration::from_secs(2));
 
         // 执行部署
-        let output = Command::new(&deployer_path)
-            .arg("/deploy")
-            .status();
+        let output = Command::new(&deployer_path).arg("/deploy").status();
 
         match output {
             Ok(status) => {
@@ -60,18 +60,18 @@ impl WeaselManager {
 
         let server_path = self.weasel_root.join("WeaselServer.exe");
         if server_path.exists() {
-            let _ = Command::new(&server_path)
-                .arg("/q")
-                .status();
+            let _ = Command::new(&server_path).arg("/q").status();
         }
 
         // 使用taskkill强制结束进程
         let _ = Command::new("taskkill")
             .args(&["/f", "/im", "WeaselServer.exe"])
+            .creation_flags(0x08000000)
             .output();
 
         let _ = Command::new("taskkill")
             .args(&["/f", "/im", "WeaselDeployer.exe"])
+            .creation_flags(0x08000000)
             .output();
     }
 
@@ -81,8 +81,7 @@ impl WeaselManager {
 
         let server_path = self.weasel_root.join("WeaselServer.exe");
         if server_path.exists() {
-            let _ = Command::new(&server_path)
-                .spawn();
+            let _ = Command::new(&server_path).spawn();
         }
     }
 }

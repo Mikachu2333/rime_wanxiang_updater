@@ -1,6 +1,6 @@
 use crate::types::UserPath;
 use rust_embed::Embed;
-use std::{path::PathBuf, process::Command};
+use std::{os::windows::process::CommandExt, path::PathBuf, process::Command};
 
 const CONF_FILENAME: &str = "updater_conf.ini";
 
@@ -24,6 +24,7 @@ fn get_user_path() -> Result<(PathBuf, PathBuf), Box<dyn std::error::Error>> {
             "-Path",
             "'Registry::HKEY_CURRENT_USER\\Software\\Rime\\Weasel'",
         ])
+        .creation_flags(0x08000000)
         .output()
         .expect("未安装 PowerShell 或调用失败");
 
@@ -40,7 +41,8 @@ fn get_user_path() -> Result<(PathBuf, PathBuf), Box<dyn std::error::Error>> {
         Err(format!(
             "Failed to get Rime user directory: {}",
             String::from_utf8_lossy(&output.stderr)
-        ).into())
+        )
+        .into())
     }
 }
 
@@ -52,6 +54,7 @@ fn get_exe_path() -> Result<(PathBuf, PathBuf, PathBuf), Box<dyn std::error::Err
             "-Path",
             "'Registry::HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Rime\\Weasel'",
         ])
+        .creation_flags(0x08000000)
         .output()
         .expect("未安装 PowerShell 或调用失败");
 
@@ -66,7 +69,8 @@ fn get_exe_path() -> Result<(PathBuf, PathBuf, PathBuf), Box<dyn std::error::Err
         Err(format!(
             "Failed to get Weasel directory: {}",
             String::from_utf8_lossy(&output.stderr)
-        ).into())
+        )
+        .into())
     }
 }
 

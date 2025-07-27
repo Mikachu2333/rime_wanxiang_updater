@@ -171,7 +171,7 @@ fn perform_update(
     let download_path = checker.cache_dir.join(&update.file_name);
 
     // 下载文件
-    if !checker.download_file(&update.url, &download_path) {
+    if !checker.download_file(&update.url, &download_path, update.sha3_256.as_deref()) {
         eprintln!("❌ {} 下载失败", update_type);
         return false;
     }
@@ -211,7 +211,7 @@ fn download_and_replace(
     let download_path = checker.cache_dir.join(&update.file_name);
 
     // 下载文件
-    if !checker.download_file(&update.url, &download_path) {
+    if !checker.download_file(&update.url, &download_path, update.sha3_256.as_deref()) {
         eprintln!("❌ 模型文件下载失败");
         return false;
     }
@@ -238,7 +238,7 @@ fn perform_self_update(checker: &UpdateChecker, update: &UpdateInfo) -> bool {
     let download_path = checker.cache_dir.join(&update.file_name);
 
     // 下载新版本
-    if !checker.download_file(&update.url, &download_path) {
+    if !checker.download_file(&update.url, &download_path,update.sha3_256.as_deref()) {
         eprintln!("❌ 程序更新文件下载失败");
         return false;
     }

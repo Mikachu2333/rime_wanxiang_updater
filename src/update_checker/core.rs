@@ -1,3 +1,4 @@
+use crate::file_checker;
 use crate::types::{UpdateConfig, UpdateInfo, UserPath};
 use std::{collections::HashMap, fs, path::PathBuf};
 
@@ -108,13 +109,56 @@ impl UpdateChecker {
     }
 
     // 委托给其他模块的方法
-    pub fn download_file(&self, url: &str, save_path: &PathBuf) -> bool {
-        self.file_ops
-            .download_file(&self.github_client.curl_path, url, save_path)
+    pub fn download_file(
+        &self,
+        url: &str,
+        save_path: &PathBuf,
+        expected_sha3_256: Option<&str>,
+    ) -> bool {
+        // 如果文件已存在且有期望的哈希值，先校验文件完整性
+        if save_path.exists() {
+            if let Some(expected_hash) = expected_sha3_256 {
+                println!("🔍 检查本地文件完整性...");
+                if self.verify_sha3_256(save_path, expected_hash) {
+                    println!("✅ 本地文件校验通过，跳过下载");
+                    return true;
+                } else {
+                    println!("❌ 本地文件校验失败，重新下载...");
+                    // 删除损坏的文件
+                    if let Err(e) = std::fs::remove_file(save_path) {
+                        eprintln!("警告：删除损坏文件失败: {}", e);
+                    }
+                }
+            } else {
+                println!("⚠️ 未提供校验和，无法验证本地文件完整性，重新下载");
+                // 删除无法验证的文件
+                if let Err(e) = std::fs::remove_file(save_path) {
+                    eprintln!("警告：删除旧文件失败: {}", e);
+                }
+            }
+        }
+
+        // 执行下载
+        let download_success =
+            self.file_ops
+                .download_file(&self.github_client.curl_path, url, save_path);
+
+        // 下载完成后再次校验
+        if download_success {
+            if let Some(expected_hash) = expected_sha3_256 {
+                println!("🔍 校验下载的文件...");
+                if !self.verify_sha3_256(save_path, expected_hash) {
+                    eprintln!("❌ 下载文件校验失败");
+                    return false;
+                }
+                println!("✅ 下载文件校验通过");
+            }
+        }
+
+        download_success
     }
 
     pub fn verify_sha3_256(&self, file_path: &PathBuf, expected_hash: &str) -> bool {
-        use crate::file_checker;
         match file_checker::verify_sha3_256(file_path, expected_hash) {
             Ok(is_valid) => is_valid,
             Err(e) => {

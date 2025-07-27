@@ -1,4 +1,4 @@
-use crate::types::{UpdateConfig, UpdateInfo};
+use crate::types::{UpdateConfig, UpdateInfo, GitHubRelease, GitHubAsset, GitHubApiError};
 use std::{path::PathBuf, process::Command};
 
 pub struct GitHubClient {
@@ -375,31 +375,4 @@ impl GitHubClient {
         }
         None
     }
-}
-
-/// GitHub Release 响应结构
-#[derive(serde::Deserialize)]
-struct GitHubRelease {
-    tag_name: String,
-    published_at: String,
-    body: Option<String>,
-    assets: Vec<GitHubAsset>,
-}
-
-/// GitHub Asset 响应结构
-#[derive(serde::Deserialize)]
-struct GitHubAsset {
-    name: String,
-    size: u64,
-    browser_download_url: String,
-    #[serde(rename = "sha3-256")]
-    sha3_256: Option<String>,
-}
-
-/// GitHub API 错误响应结构
-#[derive(serde::Deserialize)]
-#[allow(dead_code)]
-struct GitHubApiError {
-    message: String,
-    documentation_url: Option<String>,
 }
