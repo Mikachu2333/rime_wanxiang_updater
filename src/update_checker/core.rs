@@ -1,5 +1,5 @@
 use crate::file_checker;
-use crate::types::{UpdateConfig, UpdateInfo, UserPath};
+use crate::types::{UpdateConfig, UpdateInfo, UserPath, VERSION};
 use std::{collections::HashMap, fs, path::PathBuf};
 
 use super::{
@@ -8,7 +8,7 @@ use super::{
 
 pub struct UpdateChecker {
     pub cache_dir: PathBuf,
-    github_client: GitHubClient,
+    pub github_client: GitHubClient,
     file_ops: FileOperations,
     weasel_mgr: WeaselManager,
 }
@@ -95,9 +95,8 @@ impl UpdateChecker {
         // 读取并比较缓存的更新信息
         if let Ok(content) = fs::read_to_string(local_cache_path) {
             if let Ok(local_info) = serde_json::from_str::<UpdateInfo>(&content) {
-                // 如果远程版本更新或标签不同，需要更新
-                let needs_update = remote_info.update_time != local_info.update_time
-                    || remote_info.tag != local_info.tag;
+                // 使用compare_version函数进行版本比较
+                let needs_update = self.compare_version(remote_info.tag.clone(), local_info.tag.clone());
 
                 if needs_update {
                     println!(
@@ -134,6 +133,7 @@ impl UpdateChecker {
         url: &str,
         save_path: &PathBuf,
         expected_sha3_256: Option<&str>,
+        cookies: Option<String>,
     ) -> bool {
         // 如果文件已存在，先校验完整性
         if save_path.exists() {
@@ -175,7 +175,7 @@ impl UpdateChecker {
         // 执行下载
         let download_success =
             self.file_ops
-                .download_file(&self.github_client.curl_path, url, save_path);
+                .download_file(&self.github_client.curl_path, url, save_path, cookies);
 
         // 下载完成后再次校验
         if download_success {
@@ -233,5 +233,41 @@ impl UpdateChecker {
 
     pub fn deploy_weasel(&self) -> bool {
         self.weasel_mgr.deploy()
+    }
+
+    fn compare_version(&self, remote_info: String, local_info: String) -> bool {
+        dbg!(&remote_info, &local_info);
+        let remote_each = remote_info
+            .splitn(3, '.')
+            .map(|x| {
+                let filtered: String = x.chars().filter(|c| c.is_ascii_digit()).collect();
+                if filtered.is_empty() {
+                    0
+                } else {
+                    filtered.parse::<u16>().unwrap_or(0)
+                }
+            })
+            .collect::<Vec<u16>>();
+        let local_each = local_info
+            .splitn(3, '.')
+            .map(|x| {
+                let filtered: String = x.chars().filter(|c| c.is_ascii_digit()).collect();
+                if filtered.is_empty() {
+                    0
+                } else {
+                    filtered.parse::<u16>().unwrap_or(0)
+                }
+            })
+            .collect::<Vec<u16>>();
+        let mut result = false;
+        dbg!(&local_each, &remote_each);
+        for i in 0..remote_each.len() {
+            if remote_each[i] > local_each[i] {
+                result = result || true;
+            } else {
+                result = result || false;
+            }
+        }
+        result
     }
 }

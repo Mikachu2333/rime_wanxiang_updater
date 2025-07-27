@@ -186,23 +186,13 @@ pub fn read_config(config_path: &PathBuf) -> UpdateConfig {
                 if let Some(model_file_name) = files.get("model_file_name") {
                     config.model_file_name = model_file_name.trim_matches('"').to_string();
                 }
-            }
-
-            // 读取 [options] 节
-            if let Some(options) = ini.section(Some("options")) {
-                if let Some(check_interval) = options.get("check_interval_hours") {
-                    if let Ok(hours) = check_interval.parse::<u32>() {
-                        config.check_interval_hours = hours;
-                    }
-                }
-                if let Some(auto_update) = options.get("auto_update") {
-                    config.auto_update = auto_update.trim().to_lowercase() == "true";
-                }
-                if let Some(backup) = options.get("backup_before_update") {
-                    config.backup_before_update = backup.trim().to_lowercase() == "true";
-                }
-                if let Some(cookies) = options.get("github_cookies") {
-                    config.github_cookies = cookies.trim_matches('"').to_string();
+                if let Some(github_cookies) = files.get("github_cookies") {
+                    let cookies = github_cookies.trim_matches('"').to_string();
+                    config.github_cookies = if cookies.is_empty() {
+                        None
+                    } else {
+                        Some(cookies)
+                    };
                 }
             }
 
@@ -285,18 +275,6 @@ model_tag = "{}"
 # model_file_name: 具体的模型文件名
 model_file_name = "{}"
 
-[options]
-# 更新选项配置
-
-# 检查更新间隔（小时）- 避免过于频繁的更新检查
-check_interval_hours = {}
-
-# 是否启用自动更新 - false 表示仅检查不自动下载
-auto_update = {}
-
-# 更新前是否备份 - 建议保持启用以防止数据丢失
-backup_before_update = {}
-
 # GitHub Cookies 配置（可选）
 # 用于访问私有仓库或提高 API 访问限制
 # 如果遇到 API 限制或需要访问私有仓库时才需要配置
@@ -316,10 +294,7 @@ github_cookies = "{}"
         config.dict_tag,
         config.model_tag,
         config.model_file_name,
-        config.check_interval_hours,
-        config.auto_update,
-        config.backup_before_update,
-        config.github_cookies
+        config.github_cookies.as_deref().unwrap_or("")
     );
 
     if let Err(e) = std::fs::write(config_path, ini_content) {

@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 // ===== 核心业务类型 =====
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -28,10 +30,7 @@ pub struct UpdateConfig {
     pub dict_tag: String,
     pub model_tag: String,
     pub model_file_name: String,
-    pub check_interval_hours: u32,
-    pub auto_update: bool,
-    pub backup_before_update: bool,
-    pub github_cookies: String,
+    pub github_cookies: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -89,10 +88,7 @@ impl Default for UpdateConfig {
             dict_tag: "dict-nightly".to_string(),
             model_tag: "LTS".to_string(),
             model_file_name: "wanxiang-lts-zh-hans.gram".to_string(),
-            check_interval_hours: 24,
-            auto_update: false,
-            backup_before_update: true,
-            github_cookies: "".to_string(),
+            github_cookies: None,
         }
     }
 }

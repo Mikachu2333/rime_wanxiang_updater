@@ -12,7 +12,7 @@ impl FileOperations {
     }
 
     /// 下载文件
-    pub fn download_file(&self, curl_path: &PathBuf, url: &str, save_path: &PathBuf) -> bool {
+    pub fn download_file(&self, curl_path: &PathBuf, url: &str, save_path: &PathBuf, github_cookie: Option<String>) -> bool {
         println!("正在下载: {}", url);
 
         // 如果文件已存在，先删除
@@ -24,8 +24,8 @@ impl FileOperations {
         }
 
         // 使用 spawn 和 wait 来实现实时进度显示
-        let mut child = match Command::new(curl_path)
-            .args(&[
+        let mut command = Command::new(curl_path);
+        command.args(&[
                 "-C",
                 "-",              // 断点续传
                 "-L",             // 跟随重定向
@@ -38,9 +38,14 @@ impl FileOperations {
                 "-o",   // 输出文件
             ])
             .arg(save_path)
-            .arg(url)
-            .spawn()
-        {
+            .arg(url);
+
+        // 如果提供了cookie，添加cookie参数
+        if let Some(cookie) = github_cookie {
+            command.arg("-H").arg(format!("Cookie: {}", cookie));
+        }
+
+        let mut child = match command.spawn() {
             Ok(child) => child,
             Err(e) => {
                 eprintln!("❌ 执行curl命令失败: {}", e);

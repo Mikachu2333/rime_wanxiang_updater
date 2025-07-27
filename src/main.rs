@@ -7,7 +7,7 @@
 /// - 支持程序自身更新
 /// - 支持单实例运行
 /// - 支持自动重新部署小狼毫
-use std::{env, fs, os::windows::process::CommandExt, path::PathBuf};
+use std::{fs, os::windows::process::CommandExt, path::PathBuf};
 
 mod config_read;
 mod file_checker;
@@ -18,7 +18,7 @@ mod update_checker;
 use config_read::read_config;
 use update_checker::core::UpdateChecker;
 
-use crate::types::UpdateInfo;
+use crate::types::{UpdateConfig, UpdateInfo, VERSION};
 
 const PROCESS_ID: &str = "3A5583B7F6A5CF24D2E7C8650277DBB4";
 
@@ -40,7 +40,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 本项目主页：https://github.com/Mikachu2333/rime_wanxiang_updater
 "#,
-        env!("CARGO_PKG_VERSION")
+        VERSION
     );
 
     let paths = match path_get::get_path() {
@@ -59,7 +59,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("7z路径: {:?}", paths.zip);
 
     // 创建更新检查器
-    let checker = UpdateChecker::new(&paths, config);
+    let checker = UpdateChecker::new(&paths, config.clone());
 
     // 检查所有更新
     println!("\n正在检查更新...");
@@ -73,48 +73,43 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 for (component, info) in &updates {
                     println!("  {} - {} ({})", component, info.tag, info.update_time);
                     println!(
-                        "    文件: {} ({})",
+                        "    文件: {} ({})\n",
                         info.file_name,
                         format_file_size(info.file_size)
                     );
-                    if !info.description.is_empty() {
-                        println!(
-                            "    描述: {}",
-                            info.description.lines().next().unwrap_or("")
-                        );
-                    }
-                    println!();
 
                     // 处理各个组件的更新
                     match component.as_str() {
                         "schema" => {
-                            if perform_update(&checker, info, &paths.user, "方案") {
+                            if perform_update(&checker, info, &paths.user, "方案", &config) {
                                 has_updates = true;
                             }
                         }
                         "dict" => {
-                            if perform_update(&checker, info, &paths.user.join("dicts"), "词库") {
+                            if perform_update(
+                                &checker,
+                                info,
+                                &paths.user.join("dicts"),
+                                "词库",
+                                &config,
+                            ) {
                                 has_updates = true;
                             }
                         }
                         "model" => {
                             let model_path = paths.user.join(&info.file_name);
-                            if download_and_replace(&checker, info, &model_path) {
+                            if download_and_replace(&checker, info, &model_path, &config) {
                                 has_updates = true;
                             }
                         }
                         "self" => {
                             println!("发现程序更新，正在准备自动更新...");
-                            if perform_self_update(&checker, info) {
+                            if perform_self_update(&checker, info, &config) {
                                 println!("✅ 程序将在更新后重新启动");
                                 return Ok(()); // 程序退出，让批处理脚本接管
                             } else {
                                 println!("❌ 自动更新失败，请手动下载更新:");
                                 println!("  下载地址: {}", info.url);
-                                println!(
-                                    "  更新说明: {}",
-                                    info.description.lines().next().unwrap_or("")
-                                );
                             }
                         }
                         _ => {
@@ -167,11 +162,17 @@ fn perform_update(
     update: &UpdateInfo,
     extract_path: &PathBuf,
     update_type: &str,
+    config: &UpdateConfig,
 ) -> bool {
     let download_path = checker.cache_dir.join(&update.file_name);
 
     // 下载文件
-    if !checker.download_file(&update.url, &download_path, update.sha3_256.as_deref()) {
+    if !checker.download_file(
+        &update.url,
+        &download_path,
+        update.sha3_256.as_deref(),
+        config.github_cookies.clone(),
+    ) {
         eprintln!("❌ {} 下载失败", update_type);
         return false;
     }
@@ -207,11 +208,17 @@ fn download_and_replace(
     checker: &UpdateChecker,
     update: &UpdateInfo,
     target_path: &PathBuf,
+    config: &UpdateConfig,
 ) -> bool {
     let download_path = checker.cache_dir.join(&update.file_name);
 
     // 下载文件
-    if !checker.download_file(&update.url, &download_path, update.sha3_256.as_deref()) {
+    if !checker.download_file(
+        &update.url,
+        &download_path,
+        update.sha3_256.as_deref(),
+        config.github_cookies.clone(),
+    ) {
         eprintln!("❌ 模型文件下载失败");
         return false;
     }
@@ -240,11 +247,20 @@ fn download_and_replace(
     true
 }
 
-fn perform_self_update(checker: &UpdateChecker, update: &UpdateInfo) -> bool {
+fn perform_self_update(
+    checker: &UpdateChecker,
+    update: &UpdateInfo,
+    config: &UpdateConfig,
+) -> bool {
     let download_path = checker.cache_dir.join(&update.file_name);
 
     // 下载新版本
-    if !checker.download_file(&update.url, &download_path, update.sha3_256.as_deref()) {
+    if !checker.download_file(
+        &update.url,
+        &download_path,
+        update.sha3_256.as_deref(),
+        config.github_cookies.clone(),
+    ) {
         eprintln!("❌ 程序更新文件下载失败");
         return false;
     }
