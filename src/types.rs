@@ -92,3 +92,39 @@ impl Default for UpdateConfig {
         }
     }
 }
+
+pub fn compare_version(remote_info: String, local_info: String) -> bool {
+    dbg!(&remote_info, &local_info);
+    let remote_each = remote_info
+        .splitn(3, '.')
+        .map(|x| {
+            let filtered: String = x.chars().filter(|c| c.is_ascii_digit()).collect();
+            if filtered.is_empty() {
+                0
+            } else {
+                filtered.parse::<u16>().unwrap_or(0)
+            }
+        })
+        .collect::<Vec<u16>>();
+    let local_each = local_info
+        .splitn(3, '.')
+        .map(|x| {
+            let filtered: String = x.chars().filter(|c| c.is_ascii_digit()).collect();
+            if filtered.is_empty() {
+                0
+            } else {
+                filtered.parse::<u16>().unwrap_or(0)
+            }
+        })
+        .collect::<Vec<u16>>();
+    let mut result = false;
+    dbg!(&local_each, &remote_each);
+    for i in 0..remote_each.len() {
+        if remote_each[i] > local_each[i] {
+            result = result || true;
+        } else {
+            result = result || false;
+        }
+    }
+    result
+}

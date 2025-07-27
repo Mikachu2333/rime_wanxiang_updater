@@ -1,4 +1,4 @@
-use crate::types::{GitHubApiError, GitHubAsset, GitHubRelease, UpdateConfig, UpdateInfo};
+use crate::types::*;
 use std::{path::PathBuf, process::Command};
 
 pub struct GitHubClient {
@@ -122,7 +122,7 @@ impl GitHubClient {
             // 查找程序相关的资产
             if let Some(asset) = self.find_self_asset(&release_info.assets) {
                 // 检查版本是否比当前版本更新
-                let current_version = env!("CARGO_PKG_VERSION");
+                let current_version = VERSION.to_string();
                 let remote_version = &release_info.tag_name;
 
                 println!(
@@ -130,8 +130,7 @@ impl GitHubClient {
                     current_version, remote_version
                 );
 
-                // 使用版本比较函数
-                if self.compare_version_simple(remote_version.clone(), current_version.to_string()) {
+                if compare_version(remote_version.clone(), current_version) {
                     println!("✅ 找到程序更新: {}", asset.name);
                     return Ok(Some(UpdateInfo {
                         tag: release_info.tag_name,
@@ -374,42 +373,5 @@ impl GitHubClient {
             }
         }
         None
-    }
-
-    /// 简单版本比较函数
-    fn compare_version_simple(&self, remote_version: String, local_version: String) -> bool {
-        let remote_each = remote_version
-            .splitn(3, '.')
-            .map(|x| {
-                let filtered: String = x.chars().filter(|c| c.is_ascii_digit()).collect();
-                if filtered.is_empty() {
-                    0
-                } else {
-                    filtered.parse::<u16>().unwrap_or(0)
-                }
-            })
-            .collect::<Vec<u16>>();
-        let local_each = local_version
-            .splitn(3, '.')
-            .map(|x| {
-                let filtered: String = x.chars().filter(|c| c.is_ascii_digit()).collect();
-                if filtered.is_empty() {
-                    0
-                } else {
-                    filtered.parse::<u16>().unwrap_or(0)
-                }
-            })
-            .collect::<Vec<u16>>();
-        
-        for i in 0..remote_each.len().max(local_each.len()) {
-            let remote_part = remote_each.get(i).unwrap_or(&0);
-            let local_part = local_each.get(i).unwrap_or(&0);
-            if remote_part > local_part {
-                return true;
-            } else if remote_part < local_part {
-                return false;
-            }
-        }
-        false
     }
 }

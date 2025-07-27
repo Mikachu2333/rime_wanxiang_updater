@@ -12,7 +12,13 @@ impl FileOperations {
     }
 
     /// 下载文件
-    pub fn download_file(&self, curl_path: &PathBuf, url: &str, save_path: &PathBuf, github_cookie: Option<String>) -> bool {
+    pub fn download_file(
+        &self,
+        curl_path: &PathBuf,
+        url: &str,
+        save_path: &PathBuf,
+        github_cookie: Option<String>,
+    ) -> bool {
         println!("正在下载: {}", url);
 
         // 如果文件已存在，先删除
@@ -25,7 +31,8 @@ impl FileOperations {
 
         // 使用 spawn 和 wait 来实现实时进度显示
         let mut command = Command::new(curl_path);
-        command.args(&[
+        command
+            .args(&[
                 "-C",
                 "-",              // 断点续传
                 "-L",             // 跟随重定向
