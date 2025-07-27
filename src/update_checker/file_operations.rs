@@ -23,7 +23,8 @@ impl FileOperations {
             }
         }
 
-        let output = Command::new(curl_path)
+        // 使用 spawn 和 wait 来实现实时进度显示
+        let mut child = match Command::new(curl_path)
             .args(&[
                 "-C",
                 "-",              // 断点续传
@@ -38,40 +39,46 @@ impl FileOperations {
             ])
             .arg(save_path)
             .arg(url)
-            .output(); // 使用 output() 而不是 status() 来等待完成
-
-        match output {
-            Ok(result) => {
-                if result.status.success() {
-                    // 验证文件是否确实下载完成
-                    if save_path.exists() {
-                        let file_size = std::fs::metadata(save_path).map(|m| m.len()).unwrap_or(0);
-
-                        if file_size > 1000 {
-                            // 至少1KB，避免下载失败的小文件
-                            println!("✅ 下载完成: {:?} ({} bytes)", save_path, file_size);
-                            true
-                        } else {
-                            eprintln!("❌ 下载的文件太小，可能下载失败: {} bytes", file_size);
-                            // 清理不完整的文件
-                            let _ = std::fs::remove_file(save_path);
-                            false
-                        }
-                    } else {
-                        eprintln!("❌ 下载后文件不存在");
-                        false
-                    }
-                } else {
-                    eprintln!("❌ 下载失败，curl退出码: {}", result.status);
-                    eprintln!("curl stderr: {}", String::from_utf8_lossy(&result.stderr));
-                    eprintln!("curl stdout: {}", String::from_utf8_lossy(&result.stdout));
-                    false
-                }
-            }
+            .spawn()
+        {
+            Ok(child) => child,
             Err(e) => {
                 eprintln!("❌ 执行curl命令失败: {}", e);
+                return false;
+            }
+        };
+
+        // 等待下载完成
+        let result = match child.wait() {
+            Ok(status) => status,
+            Err(e) => {
+                eprintln!("❌ 等待curl进程失败: {}", e);
+                return false;
+            }
+        };
+
+        if result.success() {
+            // 验证文件是否确实下载完成
+            if save_path.exists() {
+                let file_size = std::fs::metadata(save_path).map(|m| m.len()).unwrap_or(0);
+
+                if file_size > 1000 {
+                    // 至少1KB，避免下载失败的小文件
+                    println!("✅ 下载完成: {:?} ({} bytes)", save_path, file_size);
+                    true
+                } else {
+                    eprintln!("❌ 下载的文件太小，可能下载失败: {} bytes", file_size);
+                    // 清理不完整的文件
+                    let _ = std::fs::remove_file(save_path);
+                    false
+                }
+            } else {
+                eprintln!("❌ 下载后文件不存在");
                 false
             }
+        } else {
+            eprintln!("❌ 下载失败，curl退出码: {}", result);
+            false
         }
     }
 

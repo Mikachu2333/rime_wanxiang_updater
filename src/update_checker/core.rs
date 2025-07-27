@@ -78,19 +78,39 @@ impl UpdateChecker {
         Ok(updates)
     }
 
-    /// 检查是否需要更新
+    /// 检查是否需要更新 - 同时检查JSON缓存和实际文件是否存在
     fn should_update(&self, remote_info: &UpdateInfo, local_cache_path: &PathBuf) -> bool {
+        // 如果缓存信息不存在，需要更新
         if !local_cache_path.exists() {
             return true;
         }
 
+        // 检查对应的文件是否存在于缓存目录中
+        let cached_file_path = self.cache_dir.join(&remote_info.file_name);
+        if !cached_file_path.exists() {
+            println!("缓存文件不存在，需要重新下载: {:?}", cached_file_path);
+            return true;
+        }
+
+        // 读取并比较缓存的更新信息
         if let Ok(content) = fs::read_to_string(local_cache_path) {
             if let Ok(local_info) = serde_json::from_str::<UpdateInfo>(&content) {
-                return remote_info.update_time != local_info.update_time
+                // 如果远程版本更新或标签不同，需要更新
+                let needs_update = remote_info.update_time != local_info.update_time
                     || remote_info.tag != local_info.tag;
+
+                if needs_update {
+                    println!(
+                        "发现新版本，需要更新: {} -> {}",
+                        local_info.tag, remote_info.tag
+                    );
+                }
+
+                return needs_update;
             }
         }
 
+        // 无法解析缓存信息，默认需要更新
         true
     }
 
@@ -115,25 +135,39 @@ impl UpdateChecker {
         save_path: &PathBuf,
         expected_sha3_256: Option<&str>,
     ) -> bool {
-        // 如果文件已存在且有期望的哈希值，先校验文件完整性
+        // 如果文件已存在，先校验完整性
         if save_path.exists() {
-            if let Some(expected_hash) = expected_sha3_256 {
-                println!("🔍 检查本地文件完整性...");
-                if self.verify_sha3_256(save_path, expected_hash) {
-                    println!("✅ 本地文件校验通过，跳过下载");
-                    return true;
-                } else {
-                    println!("❌ 本地文件校验失败，重新下载...");
-                    // 删除损坏的文件
+            // 检查文件大小，如果太小说明下载失败
+            if let Ok(metadata) = std::fs::metadata(save_path) {
+                if metadata.len() < 1000 {
+                    println!("🔍 发现不完整的文件 ({}字节)，重新下载...", metadata.len());
                     if let Err(e) = std::fs::remove_file(save_path) {
-                        eprintln!("警告：删除损坏文件失败: {}", e);
+                        eprintln!("警告：删除不完整文件失败: {}", e);
                     }
-                }
-            } else {
-                println!("⚠️ 未提供校验和，无法验证本地文件完整性，重新下载");
-                // 删除无法验证的文件
-                if let Err(e) = std::fs::remove_file(save_path) {
-                    eprintln!("警告：删除旧文件失败: {}", e);
+                } else if let Some(expected_hash) = expected_sha3_256 {
+                    println!("🔍 检查本地文件完整性...");
+                    if self.verify_sha3_256(save_path, expected_hash) {
+                        println!("✅ 本地文件校验通过，跳过下载");
+                        return true;
+                    } else {
+                        println!("❌ 本地文件校验失败，重新下载...");
+                        // 删除损坏的文件
+                        if let Err(e) = std::fs::remove_file(save_path) {
+                            eprintln!("警告：删除损坏文件失败: {}", e);
+                        }
+                    }
+                } else {
+                    println!("⚠️ 未提供校验和，但检测到本地文件，验证文件完整性...");
+                    // 即使没有哈希，也要检查文件是否是有效的 ZIP 文件
+                    if self.verify_zip_integrity(save_path) {
+                        println!("✅ 本地文件格式校验通过，跳过下载");
+                        return true;
+                    } else {
+                        println!("❌ 本地文件格式校验失败，重新下载...");
+                        if let Err(e) = std::fs::remove_file(save_path) {
+                            eprintln!("警告：删除损坏文件失败: {}", e);
+                        }
+                    }
                 }
             }
         }
@@ -152,6 +186,13 @@ impl UpdateChecker {
                     return false;
                 }
                 println!("✅ 下载文件校验通过");
+            } else {
+                // 没有哈希时，至少验证是否为有效 ZIP
+                if !self.verify_zip_integrity(save_path) {
+                    eprintln!("❌ 下载文件格式校验失败");
+                    return false;
+                }
+                println!("✅ 下载文件格式校验通过");
             }
         }
 
@@ -166,6 +207,24 @@ impl UpdateChecker {
                 false
             }
         }
+    }
+
+    /// 验证 ZIP 文件完整性（基本格式检查）
+    fn verify_zip_integrity(&self, file_path: &PathBuf) -> bool {
+        use std::fs::File;
+        use std::io::Read;
+
+        // 检查文件是否以 ZIP 魔法字节开头
+        if let Ok(mut file) = File::open(file_path) {
+            let mut buffer = [0; 4];
+            if file.read_exact(&mut buffer).is_ok() {
+                // ZIP 文件的魔法字节：PK\x03\x04 或 PK\x05\x06 或 PK\x07\x08
+                return buffer[0] == 0x50
+                    && buffer[1] == 0x4B
+                    && (buffer[2] == 0x03 || buffer[2] == 0x05 || buffer[2] == 0x07);
+            }
+        }
+        false
     }
 
     pub fn extract_zip(&self, zip_path: &PathBuf, extract_path: &PathBuf) -> bool {

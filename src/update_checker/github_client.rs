@@ -162,7 +162,7 @@ impl GitHubClient {
             let mirror_url = if self.config.mirror.starts_with("http") {
                 self.config.mirror.clone()
             } else {
-                format!("https://{}/", self.config.mirror)
+                format!("https://{}", self.config.mirror)
             };
             // 将 GitHub 链接转换为镜像站链接
             return format!("{}/{}", mirror_url, github_url);
