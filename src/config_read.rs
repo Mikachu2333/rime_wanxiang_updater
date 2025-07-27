@@ -1,15 +1,131 @@
 use crate::types::UpdateConfig;
 use ini::Ini;
-use std::path::PathBuf;
+use std::{path::PathBuf, io::{self, Write}};
+
+/// 初始化配置时的交互式方案选择
+pub fn init_config_with_selection(config_path: &PathBuf) -> UpdateConfig {
+    let mut config = UpdateConfig::default();
+    
+    println!("\n=== 万象输入法方案配置向导 ===");
+    
+    // 选择方案版本
+    config.schema_type = select_schema_type();
+    
+    // 如果选择增强版，需要选择具体方案
+    if config.schema_type == "pro" {
+        config.schema_key = select_schema_key();
+        config.schema_name = format!("rime-wanxiang-{}.zip", config.schema_key);
+        config.dict_name = format!("9-{}-dicts.zip", config.schema_key);
+    } else {
+        config.schema_key = "".to_string();
+        config.schema_name = "rime-wanxiang-base.zip".to_string();
+        config.dict_name = "9-base-dicts.zip".to_string();
+    }
+    
+    // 显示选择结果
+    println!("\n✅ 配置完成：");
+    println!("  方案版本: {}", if config.schema_type == "base" { "基础版" } else { "增强版" });
+    if config.schema_type == "pro" {
+        println!("  辅助码: {}", get_schema_display_name(&config.schema_key));
+    }
+    println!("  方案文件: {}", config.schema_name);
+    println!("  词库文件: {}", config.dict_name);
+    
+    // 写入配置文件
+    write_default_config(config_path, &config);
+    
+    config
+}
+
+/// 选择方案版本类型
+fn select_schema_type() -> String {
+    loop {
+        println!("\n请选择万象方案版本：");
+        println!("[1] 万象基础版 - 适合大多数用户");
+        println!("[2] 万象增强版 - 支持各种辅助码");
+        
+        print!("请输入选择 (1-2): ");
+        io::stdout().flush().unwrap();
+        
+        let mut input = String::new();
+        if io::stdin().read_line(&mut input).is_ok() {
+            match input.trim() {
+                "1" => {
+                    println!("✅ 已选择：万象基础版");
+                    return "base".to_string();
+                },
+                "2" => {
+                    println!("✅ 已选择：万象增强版");
+                    return "pro".to_string();
+                },
+                _ => {
+                    println!("❌ 输入无效，请重新选择");
+                    continue;
+                }
+            }
+        }
+    }
+}
+
+/// 选择具体的辅助码方案
+fn select_schema_key() -> String {
+    loop {
+        println!("\n请选择辅助码方案：");
+        println!("[1] 墨奇码 (moqi)");
+        println!("[2] 小鹤双拼 (flypy)");
+        println!("[3] 自然码 (zrm)");
+        println!("[4] 简单鹤 (jdh)");
+        println!("[5] 虎码 (tiger)");
+        println!("[6] 五笔 (wubi)");
+        println!("[7] 汉心码 (hanxin)");
+        
+        print!("请输入选择 (1-7): ");
+        io::stdout().flush().unwrap();
+        
+        let mut input = String::new();
+        if io::stdin().read_line(&mut input).is_ok() {
+            let choice = match input.trim() {
+                "1" => Some("moqi"),
+                "2" => Some("flypy"),
+                "3" => Some("zrm"),
+                "4" => Some("jdh"),
+                "5" => Some("tiger"),
+                "6" => Some("wubi"),
+                "7" => Some("hanxin"),
+                _ => None,
+            };
+            
+            if let Some(key) = choice {
+                println!("✅ 已选择：{}", get_schema_display_name(key));
+                return key.to_string();
+            } else {
+                println!("❌ 输入无效，请重新选择");
+            }
+        }
+    }
+}
+
+/// 获取方案显示名称
+fn get_schema_display_name(key: &str) -> &'static str {
+    match key {
+        "moqi" => "墨奇码",
+        "flypy" => "小鹤双拼",
+        "zrm" => "自然码",
+        "jdh" => "简单鹤",
+        "tiger" => "虎码",
+        "wubi" => "五笔",
+        "hanxin" => "汉心码",
+        _ => "未知方案",
+    }
+}
 
 /// 读取配置文件
 pub fn read_config(config_path: &PathBuf) -> UpdateConfig {
     let mut config = UpdateConfig::default();
 
     if !config_path.exists() {
-        println!("配置文件不存在，使用默认配置并创建配置文件");
-        write_default_config(config_path, &config);
-        return config;
+        println!("配置文件不存在，启动配置向导");
+        return init_config_with_selection(config_path);
     }
 
     match Ini::load_from_file(config_path) {
@@ -39,6 +155,12 @@ pub fn read_config(config_path: &PathBuf) -> UpdateConfig {
 
             // 读取 [files] 节
             if let Some(files) = ini.section(Some("files")) {
+                if let Some(schema_type) = files.get("schema_type") {
+                    config.schema_type = schema_type.trim_matches('"').to_string();
+                }
+                if let Some(schema_key) = files.get("schema_key") {
+                    config.schema_key = schema_key.trim_matches('"').to_string();
+                }
                 if let Some(schema_name) = files.get("schema_name") {
                     config.schema_name = schema_name.trim_matches('"').to_string();
                 }
@@ -74,11 +196,17 @@ pub fn read_config(config_path: &PathBuf) -> UpdateConfig {
                 }
             }
 
+            // 检查是否需要重新配置方案
+            if config.schema_type.is_empty() || config.schema_name.is_empty() {
+                println!("检测到配置不完整，启动方案选择向导");
+                return init_config_with_selection(config_path);
+            }
+
             println!("✅ 配置文件读取成功");
         }
         Err(e) => {
-            eprintln!("读取配置文件失败: {}, 使用默认配置", e);
-            write_default_config(config_path, &config);
+            eprintln!("读取配置文件失败: {}, 启动配置向导", e);
+            return init_config_with_selection(config_path);
         }
     }
 
@@ -119,7 +247,12 @@ self_repo = "{}"
 # 文件匹配规则 - 用于从 GitHub Releases 中识别和下载对应文件
 
 # 方案相关文件配置
-# schema_name: 方案文件的文件名，用于匹配 Release 中的资产文件
+# schema_type: 方案版本类型 (base=基础版, pro=增强版)
+schema_type = "{}"
+# schema_key: 增强版的方案键值 (moqi, flypy, zrm, jdh, tiger, wubi, hanxin)
+# 仅在 schema_type = "pro" 时生效
+schema_key = "{}"
+# schema_name: 方案文件的文件名，程序会根据上述配置自动生成
 schema_name = "{}"
 
 # 词典相关文件配置
@@ -158,6 +291,8 @@ github_cookies = "{}"
         config.dict_repo,
         config.model_repo,
         config.self_repo,
+        config.schema_type,
+        config.schema_key,
         config.schema_name,
         config.dict_name,
         config.dict_tag,
