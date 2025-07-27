@@ -87,7 +87,7 @@ impl GitHubClient {
             "https://api.github.com/repos/{}/releases/tags/{}",
             self.config.model_repo, self.config.model_tag
         );
-        println!("API URL: {}", api_url);
+        dbg!(&api_url);
 
         if let Some(release_info) = self.fetch_release_info(&api_url)? {
             // 查找模型相关的资产
@@ -165,7 +165,7 @@ impl GitHubClient {
                 format!("https://{}", self.config.mirror)
             };
             // 将 GitHub 链接转换为镜像站链接
-            return github_url.replace("https://github.com", &mirror_url);
+            return format!("{}{}", mirror_url, github_url);
         }
         github_url.to_string()
     }
@@ -230,8 +230,6 @@ impl GitHubClient {
         &self,
         api_url: &str,
     ) -> Result<Option<GitHubRelease>, Box<dyn std::error::Error>> {
-        println!("正在请求 API: {}", api_url);
-
         let output = Command::new(&self.curl_path)
             .args(&[
                 "-s",
