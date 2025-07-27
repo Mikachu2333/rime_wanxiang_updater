@@ -15,80 +15,61 @@ impl FileOperations {
     pub fn download_file(&self, curl_path: &PathBuf, url: &str, save_path: &PathBuf) -> bool {
         println!("正在下载: {}", url);
         
+        // 如果文件已存在，先删除
+        if save_path.exists() {
+            if let Err(e) = std::fs::remove_file(save_path) {
+                eprintln!("❌ 无法删除旧文件: {}", e);
+                return false;
+            }
+        }
+        
         let output = Command::new(curl_path)
             .args(&[
                 "-L",           // 跟随重定向
                 "--progress-bar", // 显示进度条
+                "--fail",       // 在HTTP错误时失败
+                "--connect-timeout", "30", // 连接超时
+                "--max-time", "1800",      // 最大下载时间(30分钟)
                 "-o",           // 输出文件
             ])
             .arg(save_path)
             .arg(url)
-            .status();
-
-        match output {
-            Ok(status) => {
-                if status.success() {
-                    println!("✅ 下载完成: {:?}", save_path);
-                    true
-                } else {
-                    eprintln!("❌ 下载失败，状态码: {}", status);
-                    false
-                }
-            }
-            Err(e) => {
-                eprintln!("❌ 下载失败: {}", e);
-                false
-            }
-        }
-    }
-
-    /// 验证SHA256哈希
-    pub fn verify_sha256(&self, file_path: &PathBuf, expected_hash: &str) -> bool {
-        if expected_hash.is_empty() {
-            println!("ℹ️ 未提供SHA256哈希值，跳过验证");
-            return true;
-        }
-
-        println!("正在验证文件完整性...");
-        
-        let output = Command::new("certutil")
-            .args(&["-hashfile"])
-            .arg(file_path)
-            .arg("SHA256")
-            .output();
+            .output(); // 使用 output() 而不是 status() 来等待完成
 
         match output {
             Ok(result) => {
                 if result.status.success() {
-                    let output_str = String::from_utf8_lossy(&result.stdout);
-                    // certutil 输出格式：第二行包含哈希值
-                    if let Some(hash_line) = output_str.lines().nth(1) {
-                        let actual_hash = hash_line.trim().replace(" ", "").to_lowercase();
-                        let expected_hash = expected_hash.trim().replace(" ", "").to_lowercase();
+                    // 验证文件是否确实下载完成
+                    if save_path.exists() {
+                        let file_size = std::fs::metadata(save_path)
+                            .map(|m| m.len())
+                            .unwrap_or(0);
                         
-                        if actual_hash == expected_hash {
-                            println!("✅ 文件完整性验证通过");
-                            return true;
+                        if file_size > 1000 { // 至少1KB，避免下载失败的小文件
+                            println!("✅ 下载完成: {:?} ({} bytes)", save_path, file_size);
+                            true
                         } else {
-                            eprintln!("❌ 文件完整性验证失败");
-                            eprintln!("  期望: {}", expected_hash);
-                            eprintln!("  实际: {}", actual_hash);
+                            eprintln!("❌ 下载的文件太小，可能下载失败: {} bytes", file_size);
+                            // 清理不完整的文件
+                            let _ = std::fs::remove_file(save_path);
+                            false
                         }
                     } else {
-                        eprintln!("❌ 无法解析certutil输出");
+                        eprintln!("❌ 下载后文件不存在");
+                        false
                     }
                 } else {
-                    eprintln!("❌ 计算SHA256失败: {}", String::from_utf8_lossy(&result.stderr));
+                    eprintln!("❌ 下载失败，curl退出码: {}", result.status);
+                    eprintln!("curl stderr: {}", String::from_utf8_lossy(&result.stderr));
+                    eprintln!("curl stdout: {}", String::from_utf8_lossy(&result.stdout));
+                    false
                 }
             }
             Err(e) => {
-                eprintln!("❌ 执行certutil命令失败: {}", e);
-                eprintln!("   将跳过哈希验证");
-                return true; // 如果无法执行验证，则跳过
+                eprintln!("❌ 执行curl命令失败: {}", e);
+                false
             }
         }
-
-        false
     }
 
     /// 解压ZIP文件

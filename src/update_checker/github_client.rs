@@ -35,7 +35,7 @@ impl GitHubClient {
                         file_name: asset.name.clone(),
                         file_size: asset.size,
                         url: self.convert_to_mirror_url(&asset.browser_download_url),
-                        sha256: None,
+                        sha3_256: asset.sha3_256.clone(),
                         update_time: release_info.published_at.clone(),
                         description: release_info.body.as_ref().unwrap_or(&String::new()).clone(),
                     }));
@@ -67,7 +67,7 @@ impl GitHubClient {
                     file_name: asset.name.clone(),
                     file_size: asset.size,
                     url: self.convert_to_mirror_url(&asset.browser_download_url),
-                    sha256: None,
+                    sha3_256: asset.sha3_256.clone(),
                     update_time: release_info.published_at,
                     description: release_info.body.unwrap_or_default(),
                 }));
@@ -98,7 +98,7 @@ impl GitHubClient {
                     file_name: asset.name.clone(),
                     file_size: asset.size,
                     url: self.convert_to_mirror_url(&asset.browser_download_url),
-                    sha256: None,
+                    sha3_256: asset.sha3_256.clone(),
                     update_time: release_info.published_at,
                     description: release_info.body.unwrap_or_default(),
                 }));
@@ -138,7 +138,7 @@ impl GitHubClient {
                         file_name: asset.name.clone(),
                         file_size: asset.size,
                         url: self.convert_to_mirror_url(&asset.browser_download_url),
-                        sha256: None,
+                        sha3_256: asset.sha3_256.clone(),
                         update_time: release_info.published_at,
                         description: release_info.body.unwrap_or_default(),
                     }));
@@ -175,8 +175,6 @@ impl GitHubClient {
         &self,
         api_url: &str,
     ) -> Result<Option<Vec<GitHubRelease>>, Box<dyn std::error::Error>> {
-        println!("正在请求 API: {}", api_url);
-
         let output = Command::new(&self.curl_path)
             .args(&[
                 "-s",
@@ -396,6 +394,8 @@ struct GitHubAsset {
     name: String,
     size: u64,
     browser_download_url: String,
+    #[serde(rename = "sha3-256")]
+    sha3_256: Option<String>,
 }
 
 /// GitHub API 错误响应结构

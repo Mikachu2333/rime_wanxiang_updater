@@ -1,17 +1,17 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-/// 用户路径配置
-#[derive(Debug, Clone)]
-pub struct UserPath {
-    pub weasel: PathBuf,
-    pub user: PathBuf,
-    pub config: PathBuf,
-    pub curl: PathBuf,
-    pub zip: PathBuf,
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateInfo {
+    pub tag: String,
+    pub file_name: String,
+    pub file_size: u64,
+    pub url: String,
+    pub sha3_256: Option<String>,
+    pub update_time: String,
+    pub description: String,
 }
 
-/// 更新配置
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct UpdateConfig {
     pub schema_repo: String,
@@ -53,14 +53,11 @@ impl Default for UpdateConfig {
     }
 }
 
-/// 更新信息
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct UpdateInfo {
-    pub tag: String,
-    pub file_name: String,
-    pub file_size: u64,
-    pub url: String,
-    pub sha256: Option<String>,
-    pub update_time: String,
-    pub description: String,
+#[derive(Debug, Clone)]
+pub struct UserPath {
+    pub user: PathBuf,
+    pub weasel: PathBuf,
+    pub config: PathBuf,
+    pub curl: PathBuf,
+    pub zip: PathBuf,
 }

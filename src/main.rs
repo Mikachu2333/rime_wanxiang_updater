@@ -1,5 +1,5 @@
 /// 万象词库更新器主程序
-/// 
+///
 /// 功能：
 /// - 检查并更新万象输入法方案
 /// - 检查并更新词库文件  
@@ -7,16 +7,18 @@
 /// - 支持程序自身更新
 /// - 支持单实例运行
 /// - 支持自动重新部署小狼毫
-use std::{fs, os::windows::process::CommandExt, path::PathBuf};
+use std::{env, fs, os::windows::process::CommandExt, path::PathBuf};
 
 mod config_read;
+mod file_checker;
 mod path_get;
 mod types;
 mod update_checker;
 
 use config_read::read_config;
-use types::UpdateInfo;
-use update_checker::UpdateChecker;
+use update_checker::core::UpdateChecker;
+
+use crate::types::UpdateInfo;
 
 const PROCESS_ID: &str = "3A5583B7F6A5CF24D2E7C8650277DBB4";
 
@@ -109,7 +111,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             } else {
                                 println!("❌ 自动更新失败，请手动下载更新:");
                                 println!("  下载地址: {}", info.url);
-                                println!("  更新说明: {}", info.description.lines().next().unwrap_or(""));
+                                println!(
+                                    "  更新说明: {}",
+                                    info.description.lines().next().unwrap_or("")
+                                );
                             }
                         }
                         _ => {
@@ -171,12 +176,21 @@ fn perform_update(
         return false;
     }
 
-    // 验证哈希 (如果有哈希值的话)
-    if let Some(ref expected_hash) = update.sha256 {
-        if !checker.verify_sha256(&download_path, expected_hash) {
-            eprintln!("❌ {} 文件完整性验证失败", update_type);
-            return false;
+    // 校验下载的文件
+    if let Some(ref expected_hash) = update.sha3_256 {
+        println!("开始校验文件完整性...");
+        match file_checker::verify_sha3_256(&download_path, expected_hash) {
+            Ok(true) => println!("✅ 文件校验通过"),
+            Ok(false) => {
+                eprintln!("❌ 文件校验失败，可能文件已损坏");
+                return false;
+            }
+            Err(e) => {
+                eprintln!("⚠️ 文件校验时出错: {}，继续处理", e);
+            }
         }
+    } else {
+        println!("⚠️ 未提供校验和，跳过文件完整性校验");
     }
 
     // 解压文件
@@ -203,8 +217,8 @@ fn download_and_replace(
     }
 
     // 验证哈希
-    if let Some(ref expected_hash) = update.sha256 {
-        if !checker.verify_sha256(&download_path, expected_hash) {
+    if let Some(ref expected_hash) = update.sha3_256 {
+        if !checker.verify_sha3_256(&download_path, expected_hash) {
             eprintln!("❌ 模型文件完整性验证失败");
             return false;
         }
@@ -230,8 +244,8 @@ fn perform_self_update(checker: &UpdateChecker, update: &UpdateInfo) -> bool {
     }
 
     // 验证哈希
-    if let Some(ref expected_hash) = update.sha256 {
-        if !checker.verify_sha256(&download_path, expected_hash) {
+    if let Some(ref expected_hash) = update.sha3_256 {
+        if !checker.verify_sha3_256(&download_path, expected_hash) {
             eprintln!("❌ 程序更新文件完整性验证失败");
             return false;
         }

@@ -113,8 +113,15 @@ impl UpdateChecker {
             .download_file(&self.github_client.curl_path, url, save_path)
     }
 
-    pub fn verify_sha256(&self, file_path: &PathBuf, expected_hash: &str) -> bool {
-        self.file_ops.verify_sha256(file_path, expected_hash)
+    pub fn verify_sha3_256(&self, file_path: &PathBuf, expected_hash: &str) -> bool {
+        use crate::file_checker;
+        match file_checker::verify_sha3_256(file_path, expected_hash) {
+            Ok(is_valid) => is_valid,
+            Err(e) => {
+                eprintln!("校验失败: {}", e);
+                false
+            }
+        }
     }
 
     pub fn extract_zip(&self, zip_path: &PathBuf, extract_path: &PathBuf) -> bool {
