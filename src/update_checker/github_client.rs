@@ -47,8 +47,8 @@ impl GitHubClient {
     pub fn check_dict_update(&self) -> Result<Option<UpdateInfo>, Box<dyn std::error::Error>> {
         println!("🔍 检查词库更新...");
         let api_url = format!(
-            "https://api.github.com/repos/{}/releases/tags/dict-nightly",
-            self.config.dict_repo
+            "https://api.github.com/repos/{}/releases/tags/{}",
+            self.config.dict_repo, self.config.dict_tag
         );
         if let Some(release_info) = self.fetch_release_info(&api_url)? {
             // 查找字典相关的资产
@@ -76,8 +76,8 @@ impl GitHubClient {
     pub fn check_model_update(&self) -> Result<Option<UpdateInfo>, Box<dyn std::error::Error>> {
         println!("🔍 检查模型更新...");
         let api_url = format!(
-            "https://api.github.com/repos/{}/releases/tags/LTS",
-            self.config.model_repo
+            "https://api.github.com/repos/{}/releases/tags/{}",
+            self.config.model_repo, self.config.model_tag
         );
         if let Some(release_info) = self.fetch_release_info(&api_url)? {
             // 查找模型相关的资产
@@ -223,9 +223,20 @@ impl GitHubClient {
 
     /// 查找方案相关的资产文件
     fn find_scheme_asset<'a>(&self, assets: &'a [GitHubAsset]) -> Option<&'a GitHubAsset> {
+        // 首先尝试精确匹配配置中的scheme_tag
+        for asset in assets {
+            if asset.name == self.config.scheme_tag {
+                return Some(asset);
+            }
+        }
+
+        // 如果精确匹配失败，尝试模糊匹配
         for asset in assets {
             let name = asset.name.to_lowercase();
-            if name.contains("scheme") || name.contains("方案") {
+            if name.contains("scheme")
+                || name.contains("方案")
+                || name.contains(&self.config.scheme_name.to_lowercase())
+            {
                 return Some(asset);
             }
         }
@@ -234,19 +245,40 @@ impl GitHubClient {
 
     /// 查找字典相关的资产文件
     fn find_dict_asset<'a>(&self, assets: &'a [GitHubAsset]) -> Option<&'a GitHubAsset> {
+        // 首先尝试精确匹配配置中的dict_name
+        for asset in assets {
+            if asset.name == self.config.dict_name {
+                return Some(asset);
+            }
+        }
+
+        // 如果精确匹配失败，尝试模糊匹配
         for asset in assets {
             let name = asset.name.to_lowercase();
-            dbg!(&name);
-            
+            if name.contains("dict") || name.contains("词库") || name.contains("dictionary") {
+                return Some(asset);
+            }
         }
         None
     }
 
     /// 查找模型相关的资产文件
     fn find_model_asset<'a>(&self, assets: &'a [GitHubAsset]) -> Option<&'a GitHubAsset> {
+        // 首先尝试精确匹配配置中的model_file_name
+        for asset in assets {
+            if asset.name == self.config.model_file_name {
+                return Some(asset);
+            }
+        }
+
+        // 如果精确匹配失败，尝试模糊匹配
         for asset in assets {
             let name = asset.name.to_lowercase();
-            if name.contains("model") || name.contains("模型") || name.contains(".gram") {
+            if name.contains("model")
+                || name.contains("模型")
+                || name.contains(".gram")
+                || name.contains(&self.config.model_name.to_lowercase())
+            {
                 return Some(asset);
             }
         }
