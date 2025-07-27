@@ -18,24 +18,32 @@ impl GitHubClient {
     pub fn check_schema_update(&self) -> Result<Option<UpdateInfo>, Box<dyn std::error::Error>> {
         println!("🔍 检查方案更新...");
         let api_url = format!(
-            "https://api.github.com/repos/{}/releases/latest",
+            "https://api.github.com/repos/{}/releases",
             self.config.schema_repo
         );
-        if let Some(release_info) = self.fetch_release_info(&api_url)? {
-            // 查找方案相关的资产
-            if let Some(asset) = self.find_schema_asset(&release_info.assets) {
-                println!("✅ 找到方案资产: {}", asset.name);
-                return Ok(Some(UpdateInfo {
-                    tag: release_info.tag_name,
-                    file_name: asset.name.clone(),
-                    file_size: asset.size,
-                    url: self.convert_to_mirror_url(&asset.browser_download_url),
-                    sha256: None,
-                    update_time: release_info.published_at,
-                    description: release_info.body.unwrap_or_default(),
-                }));
+
+        if let Some(releases) = self.fetch_releases_info(&api_url)? {
+            // 查找第一个匹配版本号格式的 release
+            if let Some(release_info) = self.find_version_release(&releases) {
+                println!("✅ 找到版本 release: {}", release_info.tag_name);
+
+                // 查找方案相关的资产
+                if let Some(asset) = self.find_schema_asset(&release_info.assets) {
+                    println!("✅ 找到方案资产: {}", asset.name);
+                    return Ok(Some(UpdateInfo {
+                        tag: release_info.tag_name.clone(),
+                        file_name: asset.name.clone(),
+                        file_size: asset.size,
+                        url: self.convert_to_mirror_url(&asset.browser_download_url),
+                        sha256: None,
+                        update_time: release_info.published_at.clone(),
+                        description: release_info.body.as_ref().unwrap_or(&String::new()).clone(),
+                    }));
+                } else {
+                    println!("❌ 未找到方案相关的资产文件");
+                }
             } else {
-                println!("❌ 未找到方案相关的资产文件");
+                println!("❌ 未找到匹配版本号格式的 release");
             }
         } else {
             println!("❌ 方案更新检查失败");
@@ -79,6 +87,8 @@ impl GitHubClient {
             "https://api.github.com/repos/{}/releases/tags/{}",
             self.config.model_repo, self.config.model_tag
         );
+        println!("API URL: {}", api_url);
+
         if let Some(release_info) = self.fetch_release_info(&api_url)? {
             // 查找模型相关的资产
             if let Some(asset) = self.find_model_asset(&release_info.assets) {
@@ -160,7 +170,64 @@ impl GitHubClient {
         github_url.to_string()
     }
 
-    /// 获取GitHub Release信息
+    /// 获取GitHub Releases列表信息
+    fn fetch_releases_info(
+        &self,
+        api_url: &str,
+    ) -> Result<Option<Vec<GitHubRelease>>, Box<dyn std::error::Error>> {
+        println!("正在请求 API: {}", api_url);
+
+        let output = Command::new(&self.curl_path)
+            .args(&[
+                "-s",
+                "-H",
+                "Accept: application/vnd.github.v3+json",
+                "-H",
+                "User-Agent: rime_wanxiang_updater",
+                api_url,
+            ])
+            .output()?;
+
+        if output.status.success() {
+            let response = String::from_utf8(output.stdout)?;
+
+            // 检查是否是 API 错误响应
+            if response.contains("\"message\"") && response.contains("\"documentation_url\"") {
+                eprintln!("❌ GitHub API 请求失败!");
+                eprintln!("请求 URL: {}", api_url);
+                eprintln!("完整响应内容: {}", response);
+
+                if let Ok(error) = serde_json::from_str::<GitHubApiError>(&response) {
+                    eprintln!("错误消息: {}", error.message);
+                    if let Some(doc_url) = &error.documentation_url {
+                        eprintln!("文档地址: {}", doc_url);
+                    }
+                }
+                return Ok(None);
+            }
+
+            match serde_json::from_str::<Vec<GitHubRelease>>(&response) {
+                Ok(releases) => {
+                    println!("✅ 成功解析 {} 个 Releases", releases.len());
+                    Ok(Some(releases))
+                }
+                Err(e) => {
+                    eprintln!("❌ 解析GitHub Releases响应失败!");
+                    eprintln!("请求 URL: {}", api_url);
+                    eprintln!("解析错误: {}", e);
+                    eprintln!("完整响应内容: {}", response);
+                    Ok(None)
+                }
+            }
+        } else {
+            eprintln!("❌ curl 请求失败!");
+            eprintln!("请求 URL: {}", api_url);
+            eprintln!("错误信息: {}", String::from_utf8_lossy(&output.stderr));
+            Ok(None)
+        }
+    }
+
+    /// 获取GitHub Release信息 (单个 release)
     fn fetch_release_info(
         &self,
         api_url: &str,
@@ -183,7 +250,6 @@ impl GitHubClient {
 
             // 检查是否是 API 错误响应
             if response.contains("\"message\"") && response.contains("\"documentation_url\"") {
-                // 这可能是 GitHub API 错误响应
                 eprintln!("❌ GitHub API 请求失败!");
                 eprintln!("请求 URL: {}", api_url);
                 eprintln!("完整响应内容: {}", response);
@@ -220,12 +286,30 @@ impl GitHubClient {
             Ok(None)
         }
     }
+    fn find_version_release<'a>(&self, releases: &'a [GitHubRelease]) -> Option<&'a GitHubRelease> {
+        for release in releases {
+            let tag = &release.tag_name;
+            // 匹配 v 开头的版本号格式: v10.2.3 或 v19.2.3-beta
+            if tag.starts_with('v') && tag.len() > 1 {
+                let version_part = &tag[1..];
+                // 检查是否包含数字和点号
+                if version_part.chars().any(|c| c.is_numeric())
+                    && version_part.chars().any(|c| c == '.')
+                {
+                    println!("找到匹配的版本标签: {}", release.tag_name);
+                    return Some(release);
+                }
+            }
+        }
+
+        None
+    }
 
     /// 查找方案相关的资产文件
     fn find_schema_asset<'a>(&self, assets: &'a [GitHubAsset]) -> Option<&'a GitHubAsset> {
         // 首先尝试精确匹配配置中的schema_name
         for asset in assets {
-            let name  = asset.name.to_lowercase();
+            let name = asset.name.to_lowercase();
             if name == self.config.schema_name.to_lowercase() {
                 return Some(asset);
             }
