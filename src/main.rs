@@ -218,9 +218,15 @@ fn download_and_replace(
 
     // 验证哈希
     if let Some(ref expected_hash) = update.sha3_256 {
-        if !checker.verify_sha3_256(&download_path, expected_hash) {
-            eprintln!("❌ 模型文件完整性验证失败");
-            return false;
+        match file_checker::verify_sha3_256(&download_path, expected_hash) {
+            Ok(true) => println!("✅ 模型文件校验通过"),
+            Ok(false) => {
+                eprintln!("❌ 模型文件完整性验证失败");
+                return false;
+            }
+            Err(e) => {
+                eprintln!("⚠️ 模型文件校验时出错: {}，继续处理", e);
+            }
         }
     }
 
@@ -238,16 +244,22 @@ fn perform_self_update(checker: &UpdateChecker, update: &UpdateInfo) -> bool {
     let download_path = checker.cache_dir.join(&update.file_name);
 
     // 下载新版本
-    if !checker.download_file(&update.url, &download_path,update.sha3_256.as_deref()) {
+    if !checker.download_file(&update.url, &download_path, update.sha3_256.as_deref()) {
         eprintln!("❌ 程序更新文件下载失败");
         return false;
     }
 
     // 验证哈希
     if let Some(ref expected_hash) = update.sha3_256 {
-        if !checker.verify_sha3_256(&download_path, expected_hash) {
-            eprintln!("❌ 程序更新文件完整性验证失败");
-            return false;
+        match file_checker::verify_sha3_256(&download_path, expected_hash) {
+            Ok(true) => println!("✅ 程序更新文件校验通过"),
+            Ok(false) => {
+                eprintln!("❌ 程序更新文件完整性验证失败");
+                return false;
+            }
+            Err(e) => {
+                eprintln!("⚠️ 程序更新文件校验时出错: {}，继续处理", e);
+            }
         }
     }
 

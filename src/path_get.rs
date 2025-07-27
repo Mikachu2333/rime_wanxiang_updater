@@ -19,10 +19,12 @@ pub fn get_path() -> Result<UserPath, Box<dyn std::error::Error>> {
 fn get_user_path() -> Result<(PathBuf, PathBuf), Box<dyn std::error::Error>> {
     let output = Command::new("powershell")
         .args([
+            "-NoProfile",
             "-Command",
-            "Get-ItemProperty",
-            "-Path",
-            "'Registry::HKEY_CURRENT_USER\\Software\\Rime\\Weasel'",
+            "[System.Console]::OutputEncoding = [System.Console]::InputEncoding = [System.Text.Encoding]::UTF8;",
+            "Get-ItemProperty", 
+            "-Path" ,
+            "'Registry::HKEY_CURRENT_USER\\Software\\Rime\\Weasel'"
         ])
         .creation_flags(0x08000000)
         .output()
@@ -49,7 +51,8 @@ fn get_user_path() -> Result<(PathBuf, PathBuf), Box<dyn std::error::Error>> {
 fn get_exe_path() -> Result<(PathBuf, PathBuf, PathBuf), Box<dyn std::error::Error>> {
     let output = Command::new("powershell")
         .args([
-            "-Command",
+            "-NoProfile","-Command",
+            "[System.Console]::OutputEncoding = [System.Console]::InputEncoding = [System.Text.Encoding]::UTF8;",
             "Get-ItemProperty",
             "-Path",
             "'Registry::HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Rime\\Weasel'",
@@ -120,6 +123,14 @@ fn parse_exe_path(output: String) -> String {
 
 fn config_exist(config_path: &PathBuf) {
     if !config_path.exists() {
+        // 确保目录存在
+        if let Some(parent) = config_path.parent() {
+            if let Err(e) = std::fs::create_dir_all(parent) {
+                eprintln!("创建配置文件目录失败: {}", e);
+                return;
+            }
+        }
+
         #[derive(Embed)]
         #[folder = "res/"]
         struct Asset;

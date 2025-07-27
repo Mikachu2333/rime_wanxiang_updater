@@ -1,16 +1,19 @@
 use crate::types::UpdateConfig;
 use ini::Ini;
-use std::{path::PathBuf, io::{self, Write}};
+use std::{
+    io::{self, Write},
+    path::PathBuf,
+};
 
 /// 初始化配置时的交互式方案选择
 pub fn init_config_with_selection(config_path: &PathBuf) -> UpdateConfig {
     let mut config = UpdateConfig::default();
-    
+
     println!("\n=== 万象输入法方案配置向导 ===");
-    
+
     // 选择方案版本
     config.schema_type = select_schema_type();
-    
+
     // 如果选择增强版，需要选择具体方案
     if config.schema_type == "pro" {
         config.schema_key = select_schema_key();
@@ -21,19 +24,26 @@ pub fn init_config_with_selection(config_path: &PathBuf) -> UpdateConfig {
         config.schema_name = "rime-wanxiang-base.zip".to_string();
         config.dict_name = "9-base-dicts.zip".to_string();
     }
-    
+
     // 显示选择结果
     println!("\n✅ 配置完成：");
-    println!("  方案版本: {}", if config.schema_type == "base" { "基础版" } else { "增强版" });
+    println!(
+        "  方案版本: {}",
+        if config.schema_type == "base" {
+            "基础版"
+        } else {
+            "增强版"
+        }
+    );
     if config.schema_type == "pro" {
         println!("  辅助码: {}", get_schema_display_name(&config.schema_key));
     }
     println!("  方案文件: {}", config.schema_name);
     println!("  词库文件: {}", config.dict_name);
-    
+
     // 写入配置文件
     write_default_config(config_path, &config);
-    
+
     config
 }
 
@@ -43,21 +53,21 @@ fn select_schema_type() -> String {
         println!("\n请选择万象方案版本：");
         println!("[1] 万象基础版 - 适合大多数用户");
         println!("[2] 万象增强版 - 支持各种辅助码");
-        
+
         print!("请输入选择 (1-2): ");
         io::stdout().flush().unwrap();
-        
+
         let mut input = String::new();
         if io::stdin().read_line(&mut input).is_ok() {
             match input.trim() {
                 "1" => {
                     println!("✅ 已选择：万象基础版");
                     return "base".to_string();
-                },
+                }
                 "2" => {
                     println!("✅ 已选择：万象增强版");
                     return "pro".to_string();
-                },
+                }
                 _ => {
                     println!("❌ 输入无效，请重新选择");
                     continue;
@@ -78,10 +88,10 @@ fn select_schema_key() -> String {
         println!("[5] 虎码 (tiger)");
         println!("[6] 五笔 (wubi)");
         println!("[7] 汉心码 (hanxin)");
-        
+
         print!("请输入选择 (1-7): ");
         io::stdout().flush().unwrap();
-        
+
         let mut input = String::new();
         if io::stdin().read_line(&mut input).is_ok() {
             let choice = match input.trim() {
@@ -94,7 +104,7 @@ fn select_schema_key() -> String {
                 "7" => Some("hanxin"),
                 _ => None,
             };
-            
+
             if let Some(key) = choice {
                 println!("✅ 已选择：{}", get_schema_display_name(key));
                 return key.to_string();
@@ -214,6 +224,14 @@ pub fn read_config(config_path: &PathBuf) -> UpdateConfig {
 }
 
 fn write_default_config(config_path: &PathBuf, config: &UpdateConfig) {
+    // 确保配置文件目录存在
+    if let Some(parent) = config_path.parent() {
+        if let Err(e) = std::fs::create_dir_all(parent) {
+            eprintln!("创建配置文件目录失败: {}", e);
+            return;
+        }
+    }
+
     let ini_content = format!(
         r#"# 万象词库更新器配置文件
 # 

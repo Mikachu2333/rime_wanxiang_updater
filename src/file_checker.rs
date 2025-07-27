@@ -7,9 +7,11 @@ pub fn calculate_sha3_256(file_path: &Path) -> Result<String, Box<dyn std::error
     // 使用 PowerShell 的 Get-FileHash 命令计算 SHA3-256
     let output = Command::new("powershell")
         .args(&[
+            "-NoProfile",
+            "[System.Console]::OutputEncoding = [System.Console]::InputEncoding = [System.Text.Encoding]::UTF8;",
             "-Command",
             &format!(
-                "Get-FileHash -Path '{}' -Algorithm SHA3-256 | Select-Object -ExpandProperty Hash",
+                "[System.Console]::OutputEncoding = [System.Console]::InputEncoding = [System.Text.Encoding]::UTF8;Get-FileHash -Path '{}' -Algorithm SHA3-256 | Select-Object -ExpandProperty Hash",
                 file_path.display()
             ),
         ])

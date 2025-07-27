@@ -1,4 +1,4 @@
-use crate::types::{UpdateConfig, UpdateInfo, GitHubRelease, GitHubAsset, GitHubApiError};
+use crate::types::{GitHubApiError, GitHubAsset, GitHubRelease, UpdateConfig, UpdateInfo};
 use std::{path::PathBuf, process::Command};
 
 pub struct GitHubClient {
@@ -303,83 +303,40 @@ impl GitHubClient {
 
     /// 查找方案相关的资产文件
     fn find_schema_asset<'a>(&self, assets: &'a [GitHubAsset]) -> Option<&'a GitHubAsset> {
-        // 根据配置的方案类型确定期望的文件名模式
-        let expected_patterns = if self.config.schema_type == "base" {
-            vec!["rime-wanxiang-base.zip".to_string()]
-        } else if self.config.schema_type == "pro" && !self.config.schema_key.is_empty() {
-            vec![format!("rime-wanxiang-{}.zip", self.config.schema_key)]
-        } else {
-            // 如果配置不完整，回退到默认匹配逻辑
-            vec![self.config.schema_name.clone()]
-        };
-
-        // 首先尝试精确匹配
-        for pattern in &expected_patterns {
-            for asset in assets {
-                if asset.name.to_lowercase() == pattern.to_lowercase() {
-                    println!("✅ 精确匹配方案文件: {}", asset.name);
-                    return Some(asset);
-                }
-            }
-        }
-
-        // 如果精确匹配失败，尝试配置中的schema_name
+        // 首先尝试精确匹配配置中的schema_name
         for asset in assets {
             let name = asset.name.to_lowercase();
             if name == self.config.schema_name.to_lowercase() {
-                println!("✅ 配置匹配方案文件: {}", asset.name);
                 return Some(asset);
             }
         }
 
-        // 最后回退到模糊匹配
+        // 如果精确匹配失败，尝试模糊匹配
         for asset in assets {
             let name = asset.name.to_lowercase();
-            if name.contains("rime-wanxiang") && name.ends_with(".zip") {
-                println!("⚠️ 模糊匹配方案文件: {} (建议检查配置)", asset.name);
+            let schema_name_lower = self.config.schema_name.to_lowercase();
+            if name.contains("scheme") || name.contains("方案") || name.contains(&schema_name_lower)
+            {
                 return Some(asset);
             }
         }
-        
         None
     }
 
     /// 查找字典相关的资产文件
     fn find_dict_asset<'a>(&self, assets: &'a [GitHubAsset]) -> Option<&'a GitHubAsset> {
-        // 根据配置的方案类型确定期望的文件名模式
-        let expected_patterns = if self.config.schema_type == "base" {
-            vec!["9-base-dicts.zip".to_string()]
-        } else if self.config.schema_type == "pro" && !self.config.schema_key.is_empty() {
-            vec![format!("9-{}-dicts.zip", self.config.schema_key)]
-        } else {
-            // 如果配置不完整，回退到默认匹配逻辑
-            vec![self.config.dict_name.clone()]
-        };
-
-        // 首先尝试精确匹配
-        for pattern in &expected_patterns {
-            for asset in assets {
-                if asset.name.to_lowercase() == pattern.to_lowercase() {
-                    println!("✅ 精确匹配词库文件: {}", asset.name);
-                    return Some(asset);
-                }
-            }
-        }
-
-        // 如果精确匹配失败，尝试配置中的dict_name
+        // 首先尝试精确匹配配置中的dict_name
         for asset in assets {
             let name = asset.name.to_lowercase();
             if name == self.config.dict_name.to_lowercase() {
-                println!("✅ 配置匹配词库文件: {}", asset.name);
                 return Some(asset);
             }
         }
 
-        // 最后回退到模糊匹配
+        // 如果精确匹配失败，尝试模糊匹配
         for asset in assets {
             let name = asset.name.to_lowercase();
             if name.contains("dict") || name.contains("词库") || name.contains("dictionary") {
-                println!("⚠️ 模糊匹配词库文件: {} (建议检查配置)", asset.name);
                 return Some(asset);
             }
         }

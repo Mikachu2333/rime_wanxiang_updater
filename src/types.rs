@@ -76,7 +76,7 @@ pub struct GitHubApiError {
 
 impl Default for UpdateConfig {
     fn default() -> Self {
-        let config = Self {
+        Self {
             schema_repo: "amzxyz/rime_wanxiang".to_string(),
             dict_repo: "amzxyz/rime_wanxiang".to_string(),
             model_repo: "amzxyz/RIME-LMDG".to_string(),
@@ -93,8 +93,6 @@ impl Default for UpdateConfig {
             auto_update: false,
             backup_before_update: true,
             github_cookies: "".to_string(),
-        };
-        println!("默认配置 - model_repo: {}", config.model_repo);
-        config
+        }
     }
 }
